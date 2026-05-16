@@ -1,0 +1,683 @@
+"use client";
+
+import { useFafoStore } from "@/lib/store";
+import type { Weekday } from "@/lib/types";
+import { useEffect, useState } from "react";
+import { Avatar } from "./Avatar";
+
+const WEEKDAY_SHORT = ["D", "L", "M", "X", "J", "V", "S"];
+
+const TABS = ["resumen", "rutinas", "personas", "lugares", "ajustes"] as const;
+export type SettingsTab = (typeof TABS)[number];
+
+export function SettingsDrawer({
+  open,
+  onClose,
+  initialTab,
+  editingRoutineId,
+}: {
+  open: boolean;
+  onClose: () => void;
+  initialTab?: SettingsTab;
+  editingRoutineId?: string;
+}) {
+  const [tab, setTab] = useState<SettingsTab>("resumen");
+
+  useEffect(() => {
+    if (open && editingRoutineId) setTab("rutinas");
+    else if (open && initialTab) setTab(initialTab);
+  }, [open, initialTab, editingRoutineId]);
+
+  if (!open) return null;
+
+  return (
+    <div
+      className="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm flex justify-end"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-md h-full bg-fafo-panel border-l border-fafo-border overflow-y-auto"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="p-4 border-b border-fafo-border flex items-center">
+          <div className="text-sm font-semibold">FAFO · Gestionar</div>
+          <button
+            onClick={onClose}
+            className="ml-auto text-fafo-muted hover:text-fafo-text text-lg leading-none"
+          >
+            ×
+          </button>
+        </div>
+
+        <div className="flex border-b border-fafo-border text-xs">
+          {TABS.map((t) => (
+            <button
+              key={t}
+              onClick={() => setTab(t)}
+              className={`flex-1 py-2.5 capitalize ${
+                tab === t
+                  ? "text-fafo-accent border-b-2 border-fafo-accent"
+                  : "text-fafo-muted hover:text-fafo-text"
+              }`}
+            >
+              {t}
+            </button>
+          ))}
+        </div>
+
+        <div className="p-4">
+          {tab === "resumen" && <ResumenTab />}
+          {tab === "rutinas" && <RutinasTab initialEditId={editingRoutineId} />}
+          {tab === "personas" && <PersonasTab />}
+          {tab === "lugares" && <LugaresTab />}
+          {tab === "ajustes" && <AjustesTab />}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ResumenTab() {
+  const tasks = useFafoStore((s) => s.tasks);
+  const dailyGoal = useFafoStore((s) => s.dailyGoal);
+  const today = new Date().toISOString().slice(0, 10);
+
+  const periods = [
+    { label: "Hoy", days: 1 },
+    { label: "Semana", days: 7 },
+    { label: "Mes", days: 30 },
+    { label: "Ano", days: 365 },
+  ];
+
+  const stats = periods.map((p) => {
+    const since = Date.now() - p.days * 24 * 3600 * 1000;
+    const completed = tasks.filter(
+      (t) => t.completedAt && t.completedAt >= since
+    ).length;
+    return { ...p, completed };
+  });
+
+  const todayDone = tasks.filter(
+    (t) =>
+      t.completedAt &&
+      new Date(t.completedAt).toISOString().slice(0, 10) === today
+  ).length;
+
+  return (
+    <div className="space-y-4">
+      <Avatar />
+      <div className="grid grid-cols-2 gap-2">
+        {stats.map((s) => (
+          <div
+            key={s.label}
+            className="border border-fafo-border rounded-lg p-3 bg-fafo-bg"
+          >
+            <div className="text-[10px] uppercase tracking-wider text-fafo-muted">
+              {s.label}
+            </div>
+            <div className="text-2xl font-bold">{s.completed}</div>
+            <div className="text-[10px] text-fafo-muted">tareas hechas</div>
+          </div>
+        ))}
+      </div>
+      <div className="rounded-lg border border-fafo-border p-3 bg-fafo-bg">
+        <div className="text-[10px] uppercase tracking-wider text-fafo-muted mb-1">
+          Meta diaria
+        </div>
+        <div className="flex items-center gap-3">
+          <div className="text-3xl font-bold">
+            {todayDone}
+            <span className="text-base text-fafo-muted">/{dailyGoal}</span>
+          </div>
+          <div className="flex-1">
+            <div className="h-2 bg-fafo-border rounded-full overflow-hidden">
+              <div
+                className="h-full bg-fafo-accent2"
+                style={{
+                  width: `${Math.min(100, (todayDone / Math.max(1, dailyGoal)) * 100)}%`,
+                }}
+              />
+            </div>
+            <div className="text-[10px] mt-1 text-fafo-muted">
+              {todayDone >= dailyGoal
+                ? "Hoy fafosteaste menos. Recompensa desbloqueada."
+                : "Si te quedas corto, va a haber consecuencias."}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function RutinasTab({ initialEditId }: { initialEditId?: string }) {
+  const routines = useFafoStore((s) => s.routines);
+  const locations = useFafoStore((s) => s.locations);
+  const people = useFafoStore((s) => s.people);
+  const addRoutine = useFafoStore((s) => s.addRoutine);
+  const updateRoutine = useFafoStore((s) => s.updateRoutine);
+  const deleteRoutine = useFafoStore((s) => s.deleteRoutine);
+
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [name, setName] = useState("");
+  const [color, setColor] = useState("#90CDE0");
+  const [days, setDays] = useState<Weekday[]>([1, 2, 3, 4, 5]);
+  const [startHour, setStartHour] = useState(9);
+  const [endHour, setEndHour] = useState(17);
+  const [allDay, setAllDay] = useState(false);
+  const [locId, setLocId] = useState<string | undefined>(undefined);
+  const [personId, setPersonId] = useState<string | undefined>(undefined);
+
+  function resetForm() {
+    setEditingId(null);
+    setName("");
+    setColor("#90CDE0");
+    setDays([1, 2, 3, 4, 5]);
+    setStartHour(9);
+    setEndHour(17);
+    setAllDay(false);
+    setLocId(undefined);
+    setPersonId(undefined);
+  }
+
+  function loadRoutine(id: string) {
+    const r = routines.find((x) => x.id === id);
+    if (!r) return;
+    setEditingId(r.id);
+    setName(r.name);
+    setColor(r.color);
+    setDays(r.weekdays);
+    setStartHour(r.startHour);
+    setEndHour(r.endHour);
+    setAllDay(r.startHour === 0 && r.endHour >= 24);
+    setLocId(r.locationId);
+    setPersonId(r.personId);
+  }
+
+  // Cargar la rutina si vino editingRoutineId desde page.tsx
+  useEffect(() => {
+    if (initialEditId) loadRoutine(initialEditId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialEditId]);
+
+  function save() {
+    if (!name.trim()) return;
+    const payload = {
+      name: name.trim(),
+      color,
+      weekdays: days,
+      startHour: allDay ? 0 : startHour,
+      endHour: allDay ? 24 : endHour,
+      locationId: locId,
+      personId,
+    };
+    if (editingId) {
+      updateRoutine(editingId, payload);
+    } else {
+      addRoutine(payload);
+    }
+    resetForm();
+  }
+
+  return (
+    <div className="space-y-3">
+      <div
+        className={`rounded-lg border p-3 bg-fafo-bg space-y-2 transition-colors ${
+          editingId
+            ? "border-fafo-accent ring-1 ring-fafo-accent/40"
+            : "border-fafo-border"
+        }`}
+      >
+        <div className="flex items-center justify-between">
+          <div className="text-[10px] uppercase tracking-wider text-fafo-muted font-semibold">
+            {editingId ? "Editando rutina" : "Nueva rutina"}
+          </div>
+          {editingId && (
+            <button
+              onClick={resetForm}
+              className="text-[10px] text-fafo-muted hover:text-fafo-text"
+            >
+              cancelar
+            </button>
+          )}
+        </div>
+        <input
+          placeholder="Nombre (ej. Deep work)"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          className="w-full bg-fafo-bg border border-fafo-border rounded-md px-2 py-1.5 text-sm outline-none focus:border-fafo-accent"
+        />
+        <div className="flex gap-1">
+          {WEEKDAY_SHORT.map((lbl, i) => {
+            const d = i as Weekday;
+            const on = days.includes(d);
+            return (
+              <button
+                key={i}
+                onClick={() =>
+                  setDays((prev) =>
+                    prev.includes(d)
+                      ? prev.filter((x) => x !== d)
+                      : [...prev, d]
+                  )
+                }
+                className={`flex-1 text-[11px] py-1 rounded ${
+                  on
+                    ? "bg-fafo-accent2 text-fafo-bg font-bold"
+                    : "bg-fafo-panel text-fafo-muted border border-fafo-border"
+                }`}
+              >
+                {lbl}
+              </button>
+            );
+          })}
+        </div>
+        <label className="flex items-center gap-2 text-[11px] text-fafo-muted cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={allDay}
+            onChange={(e) => setAllDay(e.target.checked)}
+            className="accent-fafo-accent w-4 h-4"
+          />
+          <span className={allDay ? "text-fafo-text font-semibold" : ""}>
+            Dia completo (00:00 → 24:00)
+          </span>
+        </label>
+        <div className="grid grid-cols-3 gap-2">
+          <input
+            type="time"
+            disabled={allDay}
+            value={
+              allDay
+                ? "00:00"
+                : `${Math.floor(startHour).toString().padStart(2, "0")}:00`
+            }
+            onChange={(e) => setStartHour(parseInt(e.target.value.split(":")[0]))}
+            className="bg-fafo-bg border border-fafo-border rounded-md px-2 py-1.5 text-xs disabled:opacity-40 disabled:cursor-not-allowed"
+          />
+          <input
+            type="time"
+            disabled={allDay}
+            value={
+              allDay
+                ? "23:59"
+                : `${Math.floor(endHour).toString().padStart(2, "0")}:00`
+            }
+            onChange={(e) => setEndHour(parseInt(e.target.value.split(":")[0]))}
+            className="bg-fafo-bg border border-fafo-border rounded-md px-2 py-1.5 text-xs disabled:opacity-40 disabled:cursor-not-allowed"
+          />
+          <input
+            type="color"
+            value={color}
+            onChange={(e) => setColor(e.target.value)}
+            className="h-8 w-full rounded-md border border-fafo-border bg-fafo-bg"
+          />
+        </div>
+        <select
+          value={locId ?? ""}
+          onChange={(e) => setLocId(e.target.value || undefined)}
+          className="w-full bg-fafo-bg border border-fafo-border rounded-md px-2 py-1.5 text-xs"
+        >
+          <option value="">Cualquier ubicacion</option>
+          {locations.map((l) => (
+            <option key={l.id} value={l.id}>
+              {l.emoji} {l.name}
+            </option>
+          ))}
+        </select>
+        <select
+          value={personId ?? ""}
+          onChange={(e) => setPersonId(e.target.value || undefined)}
+          className="w-full bg-fafo-bg border border-fafo-border rounded-md px-2 py-1.5 text-xs"
+        >
+          <option value="">Asignado a Yo</option>
+          {people
+            .filter((p) => !p.isSelf)
+            .map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.emoji} {p.name}
+              </option>
+            ))}
+        </select>
+        <button
+          onClick={save}
+          disabled={!name.trim()}
+          className="w-full bg-fafo-accent text-white text-xs py-2 rounded-md disabled:opacity-40"
+        >
+          {editingId ? "Guardar cambios" : "Agregar rutina"}
+        </button>
+      </div>
+      <div className="space-y-2">
+        {routines.map((r) => {
+          const isEditing = r.id === editingId;
+          const isAllDay = r.startHour === 0 && r.endHour >= 24;
+          return (
+            <div
+              key={r.id}
+              className={`border rounded-lg p-2 bg-fafo-bg flex items-center gap-2 transition-colors ${
+                isEditing
+                  ? "border-fafo-accent ring-1 ring-fafo-accent/40"
+                  : "border-fafo-border"
+              }`}
+            >
+              <div
+                className="w-3 h-8 rounded-sm"
+                style={{ background: r.color }}
+              />
+              <div className="flex-1 min-w-0">
+                <div className="text-sm font-medium truncate flex items-center gap-1.5">
+                  {r.name}
+                  {r.personId && (
+                    <span className="text-[10px] bg-fafo-panel2 text-fafo-muted px-1.5 py-0.5 rounded">
+                      {people.find((p) => p.id === r.personId)?.emoji}{" "}
+                      {people.find((p) => p.id === r.personId)?.name}
+                    </span>
+                  )}
+                </div>
+                <div className="text-[10px] text-fafo-muted">
+                  {r.weekdays.map((d) => WEEKDAY_SHORT[d]).join("")} ·{" "}
+                  {isAllDay
+                    ? "todo el dia"
+                    : `${Math.floor(r.startHour)}h–${Math.floor(r.endHour)}h`}
+                  {r.locationId
+                    ? ` · ${locations.find((l) => l.id === r.locationId)?.name}`
+                    : ""}
+                </div>
+              </div>
+              <button
+                onClick={() =>
+                  isEditing ? resetForm() : loadRoutine(r.id)
+                }
+                className={`text-[10px] px-2 py-1 rounded ${
+                  isEditing
+                    ? "bg-fafo-accent text-white"
+                    : "text-fafo-muted hover:text-fafo-text border border-fafo-border"
+                }`}
+              >
+                {isEditing ? "editando" : "editar"}
+              </button>
+              <button
+                onClick={() => {
+                  if (confirm(`Eliminar rutina "${r.name}"?`)) {
+                    deleteRoutine(r.id);
+                    if (editingId === r.id) resetForm();
+                  }
+                }}
+                className="text-[10px] text-fafo-muted hover:text-fafo-accent px-2 py-1"
+              >
+                eliminar
+              </button>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function PersonasTab() {
+  const people = useFafoStore((s) => s.people);
+  const addPerson = useFafoStore((s) => s.addPerson);
+  const deletePerson = useFafoStore((s) => s.deletePerson);
+
+  const [name, setName] = useState("");
+  const [emoji, setEmoji] = useState("\u{1F642}");
+  const [color, setColor] = useState("#ffd700");
+
+  function add() {
+    if (!name.trim()) return;
+    addPerson({ name: name.trim(), emoji, color });
+    setName("");
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="rounded-lg border border-fafo-border p-3 bg-fafo-bg space-y-2">
+        <div className="text-[10px] text-fafo-muted">
+          Las personas son perfiles fantasma — no necesitan cuenta. Sirven para
+          ver el contexto de los demas en tu calendario.
+        </div>
+        <div className="flex gap-2">
+          <input
+            value={emoji}
+            onChange={(e) => setEmoji(e.target.value.slice(0, 2))}
+            className="w-12 text-center bg-fafo-bg border border-fafo-border rounded-md py-1.5 text-base"
+          />
+          <input
+            placeholder="Nombre"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            className="flex-1 bg-fafo-bg border border-fafo-border rounded-md px-2 py-1.5 text-sm"
+          />
+          <input
+            type="color"
+            value={color}
+            onChange={(e) => setColor(e.target.value)}
+            className="w-10 h-8 rounded-md border border-fafo-border bg-fafo-bg"
+          />
+        </div>
+        <button
+          onClick={add}
+          disabled={!name.trim()}
+          className="w-full bg-fafo-accent text-white text-xs py-2 rounded-md disabled:opacity-40"
+        >
+          Agregar persona
+        </button>
+      </div>
+      <div className="space-y-2">
+        {people.map((p) => (
+          <div
+            key={p.id}
+            className="border border-fafo-border rounded-lg p-2 bg-fafo-bg flex items-center gap-2"
+          >
+            <div
+              className="w-8 h-8 rounded-full flex items-center justify-center text-lg"
+              style={{ background: p.color }}
+            >
+              {p.emoji}
+            </div>
+            <div className="flex-1">
+              <div className="text-sm font-medium">{p.name}</div>
+              <div className="text-[10px] text-fafo-muted">
+                {p.isSelf ? "Tu" : "Shadow profile"}
+              </div>
+            </div>
+            {!p.isSelf && (
+              <button
+                onClick={() => deletePerson(p.id)}
+                className="text-[10px] text-fafo-muted hover:text-fafo-accent px-2 py-1"
+              >
+                eliminar
+              </button>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function LugaresTab() {
+  const locations = useFafoStore((s) => s.locations);
+  const addLocation = useFafoStore((s) => s.addLocation);
+  const deleteLocation = useFafoStore((s) => s.deleteLocation);
+
+  const [name, setName] = useState("");
+  const [emoji, setEmoji] = useState("\u{1F4CD}");
+  const [lat, setLat] = useState("");
+  const [lng, setLng] = useState("");
+  const [radius, setRadius] = useState(100);
+
+  function add() {
+    if (!name.trim()) return;
+    const latN = parseFloat(lat);
+    const lngN = parseFloat(lng);
+    if (isNaN(latN) || isNaN(lngN)) return;
+    addLocation({
+      name: name.trim(),
+      emoji,
+      coords: { lat: latN, lng: lngN },
+      radiusMeters: radius,
+      isMock: true,
+    });
+    setName("");
+    setLat("");
+    setLng("");
+  }
+
+  function captureHere() {
+    if (typeof navigator === "undefined" || !navigator.geolocation) return;
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setLat(pos.coords.latitude.toFixed(6));
+        setLng(pos.coords.longitude.toFixed(6));
+      },
+      undefined,
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="rounded-lg border border-fafo-border p-3 bg-fafo-bg space-y-2">
+        <div className="flex gap-2">
+          <input
+            value={emoji}
+            onChange={(e) => setEmoji(e.target.value.slice(0, 2))}
+            className="w-12 text-center bg-fafo-bg border border-fafo-border rounded-md py-1.5 text-base"
+          />
+          <input
+            placeholder="Nombre (ej. Casa)"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            className="flex-1 bg-fafo-bg border border-fafo-border rounded-md px-2 py-1.5 text-sm"
+          />
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <input
+            placeholder="Latitud"
+            value={lat}
+            onChange={(e) => setLat(e.target.value)}
+            className="bg-fafo-bg border border-fafo-border rounded-md px-2 py-1.5 text-xs"
+          />
+          <input
+            placeholder="Longitud"
+            value={lng}
+            onChange={(e) => setLng(e.target.value)}
+            className="bg-fafo-bg border border-fafo-border rounded-md px-2 py-1.5 text-xs"
+          />
+        </div>
+        <div className="flex items-center gap-2">
+          <label className="text-[10px] text-fafo-muted">Radio:</label>
+          <input
+            type="range"
+            min={20}
+            max={500}
+            value={radius}
+            onChange={(e) => setRadius(parseInt(e.target.value))}
+            className="flex-1"
+          />
+          <span className="text-[10px] text-fafo-muted">{radius}m</span>
+        </div>
+        <div className="flex gap-2">
+          <button
+            onClick={captureHere}
+            className="flex-1 text-xs py-2 rounded-md border border-fafo-border hover:border-fafo-accent2"
+          >
+            📍 Usar GPS actual
+          </button>
+          <button
+            onClick={add}
+            disabled={!name.trim() || !lat || !lng}
+            className="flex-1 bg-fafo-accent text-white text-xs py-2 rounded-md disabled:opacity-40"
+          >
+            Agregar
+          </button>
+        </div>
+      </div>
+      <div className="space-y-2">
+        {locations.map((l) => (
+          <div
+            key={l.id}
+            className="border border-fafo-border rounded-lg p-2 bg-fafo-bg flex items-center gap-2"
+          >
+            <div className="w-8 h-8 rounded-md bg-fafo-panel flex items-center justify-center text-lg">
+              {l.emoji}
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-medium truncate">{l.name}</div>
+              <div className="text-[10px] text-fafo-muted">
+                {l.coords.lat.toFixed(4)}, {l.coords.lng.toFixed(4)} · {l.radiusMeters}m
+              </div>
+            </div>
+            <button
+              onClick={() => deleteLocation(l.id)}
+              className="text-[10px] text-fafo-muted hover:text-fafo-accent px-2 py-1"
+            >
+              eliminar
+            </button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function AjustesTab() {
+  const dailyGoal = useFafoStore((s) => s.dailyGoal);
+  const setDailyGoal = useFafoStore((s) => s.setDailyGoal);
+  const useRealGps = useFafoStore((s) => s.useRealGps);
+  const setUseRealGps = useFafoStore((s) => s.setUseRealGps);
+  const resetAll = useFafoStore((s) => s.resetAll);
+
+  return (
+    <div className="space-y-4">
+      <div className="rounded-lg border border-fafo-border p-3 bg-fafo-bg">
+        <label className="text-[10px] uppercase tracking-wider text-fafo-muted">
+          Meta de tareas diaria
+        </label>
+        <input
+          type="number"
+          min={1}
+          max={50}
+          value={dailyGoal}
+          onChange={(e) => setDailyGoal(parseInt(e.target.value) || 1)}
+          className="w-full bg-fafo-bg border border-fafo-border rounded-md px-2 py-1.5 text-sm mt-1"
+        />
+      </div>
+      <div className="rounded-lg border border-fafo-border p-3 bg-fafo-bg flex items-center justify-between">
+        <div>
+          <div className="text-sm font-medium">GPS real</div>
+          <div className="text-[10px] text-fafo-muted">
+            Usar tu ubicacion real para resolver geofences.
+          </div>
+        </div>
+        <button
+          onClick={() => setUseRealGps(!useRealGps)}
+          className={`w-10 h-6 rounded-full relative transition-colors ${
+            useRealGps ? "bg-fafo-accent2" : "bg-fafo-border"
+          }`}
+        >
+          <span
+            className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white transition-transform ${
+              useRealGps ? "translate-x-4" : ""
+            }`}
+          />
+        </button>
+      </div>
+      <button
+        onClick={() => {
+          if (confirm("Esto resetea todo a los valores iniciales. Seguro?")) {
+            resetAll();
+          }
+        }}
+        className="w-full text-xs py-2 rounded-md border border-fafo-border text-fafo-accent hover:bg-fafo-accent hover:text-white transition-colors"
+      >
+        Resetear toda la data
+      </button>
+      <div className="text-[10px] text-fafo-muted text-center">
+        FAFO v0.1 — All data is local (localStorage). No accounts, no tracking.
+      </div>
+    </div>
+  );
+}
