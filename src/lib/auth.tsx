@@ -37,9 +37,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
 
     // Suscribirse a cambios
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, sess) => {
+    const { data: sub } = supabase.auth.onAuthStateChange((event, sess) => {
       setSession(sess ?? null);
       setUser(sess?.user ?? null);
+      // Si llegamos via link de "Olvide mi password", redirigir al form
+      if (event === "PASSWORD_RECOVERY") {
+        if (
+          typeof window !== "undefined" &&
+          window.location.pathname !== "/reset-password"
+        ) {
+          window.location.replace("/reset-password");
+        }
+      }
     });
     return () => {
       sub.subscription.unsubscribe();
