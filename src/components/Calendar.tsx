@@ -680,7 +680,7 @@ function RoutineBlock({
       {/* Lista de flex tasks dentro de la rutina */}
       {flexTasks && flexTasks.length > 0 && (
         <div
-          className="absolute left-1.5 right-7 top-9 bottom-2 flex flex-col gap-1 pointer-events-none overflow-y-auto"
+          className="absolute left-2 right-2 top-9 bottom-2 flex flex-col gap-1.5 pointer-events-none overflow-y-auto md:left-1.5 md:right-7 md:gap-1"
         >
           {flexTasks.map((t) => {
             const isDone = !!t.done;
@@ -727,9 +727,12 @@ function RoutineBlock({
                   onFlexTaskOpen?.(t.id);
                 }}
                 className={clsx(
-                  "pointer-events-auto px-2.5 py-1.5 rounded-md flex items-center gap-2 shadow-md hover:shadow-lg transition-all shrink-0 max-w-full text-left cursor-move",
+                  "pointer-events-auto rounded-lg flex items-center gap-3 shadow-md hover:shadow-lg transition-all shrink-0 max-w-full text-left cursor-move",
                   "ring-1 ring-fafo-text/5",
-                  compact ? "text-[11px]" : "text-[13px]",
+                  // Mobile-first sizing — grande y comodo en mobile, mas compacto en desktop
+                  compact
+                    ? "px-2.5 py-1.5 text-[11px] gap-2"
+                    : "px-3.5 py-3 text-[15px] md:px-3 md:py-2 md:text-[13px] md:gap-2",
                   isDone
                     ? "bg-emerald-200 text-emerald-900 line-through"
                     : isOverdue
@@ -746,7 +749,10 @@ function RoutineBlock({
                     toggleTask(t.id);
                   }}
                   className={clsx(
-                    "w-4 h-4 rounded-full border-2 flex items-center justify-center text-[10px] shrink-0 cursor-pointer",
+                    "rounded-full border-2 flex items-center justify-center shrink-0 cursor-pointer",
+                    compact
+                      ? "w-4 h-4 text-[10px]"
+                      : "w-5 h-5 text-xs md:w-4 md:h-4 md:text-[10px]",
                     isDone
                       ? "bg-fafo-accent2 border-fafo-accent2 text-white"
                       : "border-fafo-muted/60 hover:border-fafo-accent"
@@ -756,8 +762,9 @@ function RoutineBlock({
                 </span>
                 <span
                   className={clsx(
-                    "w-1.5 h-1.5 rounded-full shrink-0",
-                    PRIORITY_DOT[t.priority]
+                    "rounded-full shrink-0",
+                    PRIORITY_DOT[t.priority],
+                    compact ? "w-1.5 h-1.5" : "w-2 h-2 md:w-1.5 md:h-1.5"
                   )}
                 />
                 <span className="truncate font-medium flex-1">{t.name}</span>
@@ -766,17 +773,17 @@ function RoutineBlock({
                     className="shrink-0 text-[9px] font-bold uppercase tracking-wider bg-fafo-accent/15 text-fafo-accent px-1.5 py-0.5 rounded"
                     title="Repetitiva: se rehace cada vez que aparece la rutina"
                   >
-                    ↻ Repet
+                    ↻ <span className="hidden sm:inline">Repet</span>
                   </span>
                 ) : (
                   <span
-                    className="shrink-0 text-[9px] uppercase tracking-wider text-fafo-muted/60"
+                    className="shrink-0 text-[9px] uppercase tracking-wider text-fafo-muted/60 hidden sm:inline"
                     title="Unica: una vez hecha, queda hecha"
                   >
                     Unica
                   </span>
                 )}
-                <span className="text-fafo-muted/40 text-[10px] select-none shrink-0">
+                <span className="text-fafo-muted/40 text-[10px] select-none shrink-0 hidden md:inline">
                   ⋮⋮
                 </span>
               </button>
