@@ -208,7 +208,7 @@ export function TodoPanel({
             <div className="text-3xl mb-2 opacity-50">📭</div>
             <div className="mb-1">No hay tareas sin horario</div>
             <div className="text-[10px] opacity-70">
-              Escribi arriba y presiona Enter, o usá el "+" del calendario.
+              Escribi arriba y presiona Enter, o usa el &quot;+&quot; del calendario.
             </div>
           </div>
         )}
