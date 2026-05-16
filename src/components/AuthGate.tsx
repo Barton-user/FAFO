@@ -2,11 +2,48 @@
 
 import { useAuth } from "@/lib/auth";
 import { isSupabaseConfigured } from "@/lib/supabase";
-import { useState, type ReactNode } from "react";
+import { useFafoStore } from "@/lib/store";
+import { loadAll } from "@/lib/api";
+import {
+  migrateLocalToSupabaseIfEmpty,
+  readLocalStateRaw,
+} from "@/lib/migration";
+import { useEffect, useState, type ReactNode } from "react";
 import clsx from "clsx";
 
 export function AuthGate({ children }: { children: ReactNode }) {
   const { user, loading } = useAuth();
+  const hydrate = useFafoStore((s) => s.hydrate);
+  const [syncing, setSyncing] = useState(false);
+  const [syncError, setSyncError] = useState<string | null>(null);
+
+  // Cuando el user queda autenticado, sincronizamos: migracion (si aplica) + hydrate.
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+    setSyncing(true);
+    setSyncError(null);
+    (async () => {
+      try {
+        // Leer DIRECTO de localStorage para evitar race con persist hidratacion.
+        const localSnapshot = readLocalStateRaw();
+        const result = await migrateLocalToSupabaseIfEmpty(localSnapshot);
+        console.log("[FAFO sync] migration:", result);
+        const snap = await loadAll();
+        if (cancelled) return;
+        hydrate(snap);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "sync error";
+        console.error("[FAFO sync]", err);
+        if (!cancelled) setSyncError(msg);
+      } finally {
+        if (!cancelled) setSyncing(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user, hydrate]);
 
   if (!isSupabaseConfigured) {
     return (
@@ -25,11 +62,18 @@ export function AuthGate({ children }: { children: ReactNode }) {
     );
   }
 
-  if (loading) {
+  if (loading || (user && syncing)) {
     return (
       <main className="h-screen bg-fafo-bg flex items-center justify-center">
-        <div className="text-fafo-accent font-black text-4xl tracking-tighter animate-pulse">
-          FAFO
+        <div className="text-center space-y-2">
+          <div className="text-fafo-accent font-black text-4xl tracking-tighter animate-pulse">
+            FAFO
+          </div>
+          {syncing && (
+            <div className="text-[11px] text-fafo-muted">
+              sincronizando tu data...
+            </div>
+          )}
         </div>
       </main>
     );
@@ -37,6 +81,25 @@ export function AuthGate({ children }: { children: ReactNode }) {
 
   if (!user) {
     return <LoginScreen />;
+  }
+
+  if (syncError) {
+    return (
+      <main className="h-screen bg-fafo-bg flex items-center justify-center p-6">
+        <div className="max-w-md text-center space-y-3">
+          <div className="text-fafo-accent font-black text-2xl">FAFO</div>
+          <div className="text-sm text-red-500">
+            Error sincronizando con Supabase: {syncError}
+          </div>
+          <button
+            onClick={() => window.location.reload()}
+            className="text-xs px-3 py-2 rounded-md bg-fafo-accent text-white"
+          >
+            Reintentar
+          </button>
+        </div>
+      </main>
+    );
   }
 
   return <>{children}</>;

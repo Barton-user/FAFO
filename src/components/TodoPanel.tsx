@@ -45,6 +45,9 @@ export function TodoPanel({
   const addTask = useFafoStore((s) => s.addTask);
   const reorderTask = useFafoStore((s) => s.reorderTask);
 
+  // Drop target dia para drag cross-day
+  const [dayDragOver, setDayDragOver] = useState<string | null>(null);
+
   const self = people.find((p) => p.isSelf) ?? people[0];
   const selfDefaultId = self?.id ?? "person-self";
   const isAll = viewingPersonId === "__all__";
@@ -219,7 +222,35 @@ export function TodoPanel({
           const done = dayTasks.filter((t) => isTaskDoneForDay(t, d));
 
           return (
-            <section key={d} className="border-b border-fafo-border/60">
+            <section
+              key={d}
+              className={clsx(
+                "border-b border-fafo-border/60 transition-colors",
+                dayDragOver === d && "bg-fafo-accent/5"
+              )}
+              onDragOver={(e) => {
+                e.preventDefault();
+                e.dataTransfer.dropEffect = "move";
+                setDayDragOver(d);
+              }}
+              onDragLeave={() => {
+                setDayDragOver((cur) => (cur === d ? null : cur));
+              }}
+              onDrop={(e) => {
+                const srcId = e.dataTransfer.getData("text/task-id");
+                if (srcId) {
+                  const w = parseISO(d).getDay() as Weekday;
+                  const t = tasks.find((x) => x.id === srcId);
+                  if (t && !t.weekdays.includes(w)) {
+                    e.preventDefault();
+                    updateTask(srcId, { weekdays: [w] });
+                  }
+                }
+                setDayDragOver(null);
+                setDraggingId(null);
+                setDragOverId(null);
+              }}
+            >
               <div
                 className={clsx(
                   "px-4 py-2 flex items-center gap-2 text-[11px] uppercase tracking-wider font-semibold sticky top-0 backdrop-blur z-[5]",

@@ -185,17 +185,47 @@ export function TaskModal({
           </div>
 
           {/* Flexible (sin horario fijo) */}
-          <label className="flex items-center gap-2 text-xs cursor-pointer select-none">
-            <input
-              type="checkbox"
-              checked={flexible}
-              onChange={(e) => setFlexible(e.target.checked)}
-              className="accent-fafo-accent w-4 h-4"
-            />
-            <span className={flexible ? "text-fafo-text font-semibold" : "text-fafo-muted"}>
-              Sin horario fijo (todo el dia / orden libre)
-            </span>
-          </label>
+          <div className="space-y-1.5">
+            <label className="flex items-center gap-2 text-xs cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={flexible}
+                onChange={(e) => {
+                  const checked = e.target.checked;
+                  if (!checked) {
+                    const span = endHour - startHour;
+                    if (span > 2 || span <= 0) {
+                      const safeStart =
+                        startHour > 0 && startHour < 23 ? startHour : 9;
+                      setStartHour(safeStart);
+                      setEndHour(Math.min(24, safeStart + 1));
+                    }
+                  }
+                  setFlexible(checked);
+                }}
+                className="accent-fafo-accent w-4 h-4"
+              />
+              <span
+                className={
+                  flexible
+                    ? "text-fafo-text font-semibold"
+                    : "text-fafo-muted"
+                }
+              >
+                Sin horario fijo (todo el dia / orden libre)
+              </span>
+            </label>
+            {!flexible && routineId && (
+              <button
+                type="button"
+                onClick={() => setFlexible(true)}
+                className="text-[10px] text-fafo-accent hover:underline pl-6"
+                title="Hace que esta tarea aparezca como chip dentro de la rutina"
+              >
+                → Mover a la lista de la rutina (como chip)
+              </button>
+            )}
+          </div>
 
           {/* Time */}
           {!flexible && (

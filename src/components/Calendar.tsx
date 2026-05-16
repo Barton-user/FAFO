@@ -3,7 +3,7 @@
 import { useFafoStore } from "@/lib/store";
 import { useResolvedContext } from "@/lib/context";
 import type { Task, Routine, Person, Weekday, ViewMode } from "@/lib/types";
-import { useMemo, useRef, useState, useCallback } from "react";
+import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import {
   parseISO,
   startOfWeek,
@@ -761,6 +761,21 @@ function RoutineBlock({
                   )}
                 />
                 <span className="truncate font-medium flex-1">{t.name}</span>
+                {t.recurringInRoutine ? (
+                  <span
+                    className="shrink-0 text-[9px] font-bold uppercase tracking-wider bg-fafo-accent/15 text-fafo-accent px-1.5 py-0.5 rounded"
+                    title="Repetitiva: se rehace cada vez que aparece la rutina"
+                  >
+                    ↻ Repet
+                  </span>
+                ) : (
+                  <span
+                    className="shrink-0 text-[9px] uppercase tracking-wider text-fafo-muted/60"
+                    title="Unica: una vez hecha, queda hecha"
+                  >
+                    Unica
+                  </span>
+                )}
                 <span className="text-fafo-muted/40 text-[10px] select-none shrink-0">
                   ⋮⋮
                 </span>
@@ -796,6 +811,21 @@ function DayView({
 
   const weekday = parseISO(selectedDate).getDay() as Weekday;
   const isToday = selectedDate === todayISO();
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const didScrollRef = useRef(false);
+
+  // Auto-scroll a la hora actual al cargar/cambiar de dia
+  useEffect(() => {
+    if (!scrollRef.current) return;
+    didScrollRef.current = false;
+  }, [selectedDate]);
+  useEffect(() => {
+    if (!scrollRef.current || didScrollRef.current) return;
+    const targetHour = isToday ? Math.max(HOUR_START, ctx.hour - 1) : 8;
+    const y = (targetHour - HOUR_START) * HOUR_HEIGHT;
+    scrollRef.current.scrollTop = y;
+    didScrollRef.current = true;
+  }, [isToday, ctx.hour]);
 
   const isAll = viewingPersonId === "__all__";
   const visiblePeople = useMemo(() => {
@@ -965,7 +995,7 @@ function DayView({
         </div>
       </div>
 
-      <div className="flex-1 overflow-x-auto overflow-y-auto">
+      <div ref={scrollRef} className="flex-1 overflow-x-auto overflow-y-auto">
         <div
           className="grid"
           style={{
@@ -1174,6 +1204,20 @@ function WeekView({
   const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
   const today = todayISO();
 
+  // Auto-scroll a la hora actual
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const didScrollRef = useRef(false);
+  useEffect(() => {
+    didScrollRef.current = false;
+  }, [selectedDate]);
+  useEffect(() => {
+    if (!scrollRef.current || didScrollRef.current) return;
+    const hasToday = days.includes(today);
+    const targetHour = hasToday ? Math.max(HOUR_START, ctx.hour - 1) : 8;
+    scrollRef.current.scrollTop = (targetHour - HOUR_START) * HOUR_HEIGHT;
+    didScrollRef.current = true;
+  }, [days, today, ctx.hour]);
+
   const tasksByDay = useMemo(() => {
     const map = new Map<string, Task[]>();
     for (const d of days) map.set(d, []);
@@ -1357,7 +1401,7 @@ function WeekView({
         </div>
       </div>
 
-      <div className="flex-1 overflow-x-auto overflow-y-auto">
+      <div ref={scrollRef} className="flex-1 overflow-x-auto overflow-y-auto">
         <div
           className="grid"
           style={{ gridTemplateColumns: `repeat(7, minmax(140px, 1fr))` }}
@@ -1597,6 +1641,20 @@ function WeekViewAll({
     currentY: number;
   } | null>(null);
 
+  // Auto-scroll a la hora actual
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const didScrollRef = useRef(false);
+  useEffect(() => {
+    didScrollRef.current = false;
+  }, [selectedDate]);
+  useEffect(() => {
+    if (!scrollRef.current || didScrollRef.current) return;
+    const hasToday = days.includes(today);
+    const targetHour = hasToday ? Math.max(HOUR_START, ctx.hour - 1) : 8;
+    scrollRef.current.scrollTop = (targetHour - HOUR_START) * HOUR_HEIGHT;
+    didScrollRef.current = true;
+  }, [days, today, ctx.hour]);
+
   const onDown = useCallback(
     (e: React.PointerEvent<HTMLDivElement>, idx: number) => {
       if (e.button !== 0 && e.pointerType === "mouse") return;
@@ -1667,7 +1725,7 @@ function WeekViewAll({
         </div>
       </div>
 
-      <div className="flex-1 overflow-x-auto overflow-y-auto">
+      <div ref={scrollRef} className="flex-1 overflow-x-auto overflow-y-auto">
         {/* Sticky header con dia + sub-headers de personas */}
         <div className="sticky top-0 z-20 bg-fafo-panel/95 backdrop-blur">
           <div
@@ -1930,6 +1988,7 @@ function WeekViewAll({
 
 function MonthView({ selectedDate, onSelectDate }: Props) {
   const tasks = useFafoStore((s) => s.tasks);
+  const ctx = useResolvedContext();
   const cells = monthGridDays(selectedDate);
   const today = todayISO();
 
@@ -1946,6 +2005,33 @@ function MonthView({ selectedDate, onSelectDate }: Props) {
     }
     return map;
   }, [tasks, cells]);
+
+  // Calcular metricas por dia
+  const dayStats = useMemo(() => {
+    const map = new Map<
+      string,
+      { total: number; done: number; overdue: number }
+    >();
+    for (const c of cells) {
+      const list = tasksByDay.get(c) ?? [];
+      const done = list.filter((t) => isTaskDoneForDay(t, c)).length;
+      let overdue = 0;
+      if (c < today) {
+        // dias pasados: no hechas = vencidas
+        overdue = list.filter((t) => !isTaskDoneForDay(t, c)).length;
+      } else if (c === today) {
+        // hoy: las con horario ya vencido
+        overdue = list.filter(
+          (t) =>
+            !isTaskDoneForDay(t, c) &&
+            !t.flexible &&
+            t.endHour <= ctx.hour
+        ).length;
+      }
+      map.set(c, { total: list.length, done, overdue });
+    }
+    return map;
+  }, [tasksByDay, cells, today, ctx.hour]);
 
   return (
     <div className="flex-1 overflow-auto bg-fafo-bg p-4">
@@ -1964,19 +2050,25 @@ function MonthView({ selectedDate, onSelectDate }: Props) {
           const inMonth = isSameMonth(iso, selectedDate);
           const isToday = iso === today;
           const isSelected = iso === selectedDate;
+          const stats = dayStats.get(iso) ?? { total: 0, done: 0, overdue: 0 };
           const ts = tasksByDay.get(iso) ?? [];
-          const undone = ts.filter((t) => !t.done);
-          const top3 = undone.slice(0, 3);
+          const undone = ts.filter((t) => !isTaskDoneForDay(t, iso));
+          const top2 = undone.slice(0, 2);
+          const completionPct =
+            stats.total > 0 ? (stats.done / stats.total) * 100 : 0;
+          const overduePct =
+            stats.total > 0 ? (stats.overdue / stats.total) * 100 : 0;
 
           return (
             <button
               key={iso}
               onClick={() => onSelectDate(iso)}
               className={clsx(
-                "min-h-[90px] bg-fafo-bg text-left p-2 flex flex-col gap-1 transition-colors hover:bg-fafo-panel/60",
+                "min-h-[100px] bg-fafo-bg text-left p-2 flex flex-col gap-1 transition-colors hover:bg-fafo-panel/60",
                 !inMonth && "opacity-35",
                 isSelected && "ring-2 ring-inset ring-fafo-accent",
-                isToday && "bg-fafo-accent/5"
+                isToday && "bg-fafo-accent/5",
+                stats.overdue > 0 && !isToday && iso < today && "bg-red-50"
               )}
             >
               <div className="flex items-center justify-between">
@@ -1992,14 +2084,38 @@ function MonthView({ selectedDate, onSelectDate }: Props) {
                 >
                   {date.getDate()}
                 </span>
-                {undone.length > 0 && (
-                  <span className="text-[9px] text-fafo-muted tabular-nums">
-                    {undone.length}
+                {stats.total > 0 && (
+                  <span
+                    className={clsx(
+                      "text-[9px] tabular-nums font-semibold",
+                      stats.overdue > 0
+                        ? "text-red-500"
+                        : stats.done === stats.total
+                          ? "text-fafo-accent2"
+                          : "text-fafo-muted"
+                    )}
+                  >
+                    {stats.done}/{stats.total}
                   </span>
                 )}
               </div>
-              <div className="flex flex-col gap-0.5">
-                {top3.map((t) => (
+
+              {/* Barra dual progreso */}
+              {stats.total > 0 && (
+                <div className="h-1 bg-fafo-border/40 rounded-full overflow-hidden flex">
+                  <div
+                    className="h-full bg-fafo-accent2"
+                    style={{ width: `${completionPct}%` }}
+                  />
+                  <div
+                    className="h-full bg-red-400"
+                    style={{ width: `${overduePct}%` }}
+                  />
+                </div>
+              )}
+
+              <div className="flex flex-col gap-0.5 mt-0.5">
+                {top2.map((t) => (
                   <div
                     key={t.id}
                     className="flex items-center gap-1 text-[10px] truncate"
@@ -2013,9 +2129,9 @@ function MonthView({ selectedDate, onSelectDate }: Props) {
                     <span className="truncate">{t.name}</span>
                   </div>
                 ))}
-                {undone.length > 3 && (
+                {undone.length > 2 && (
                   <span className="text-[9px] text-fafo-muted">
-                    +{undone.length - 3} mas
+                    +{undone.length - 2} mas
                   </span>
                 )}
               </div>

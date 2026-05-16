@@ -14,8 +14,24 @@ import type {
   Theme,
 } from "./types";
 import { SEED_STATE } from "./seed";
+import * as api from "./api";
+import { useSyncStore } from "./syncStore";
 
 const uid = () => Math.random().toString(36).slice(2, 10);
+
+// Helper para invocar APIs en background sin bloquear UI.
+function bg(label: string, fn: () => Promise<unknown> | null | undefined) {
+  const sync = useSyncStore.getState();
+  sync.inc();
+  Promise.resolve()
+    .then(() => fn())
+    .catch((err) => {
+      console.error(`[FAFO bg:${label}]`, err);
+      const msg = err?.message ?? String(err);
+      useSyncStore.getState().setError(`${label}: ${msg}`);
+    })
+    .finally(() => useSyncStore.getState().dec());
+}
 
 interface Actions {
   // tasks
@@ -45,6 +61,8 @@ interface Actions {
   // UI
   setTheme: (t: Theme) => void;
   toggleTheme: () => void;
+  // Sync
+  hydrate: (snapshot: api.RemoteSnapshot) => void;
 }
 
 export const useFafoStore = create<AppState & Actions>()(
@@ -54,35 +72,55 @@ export const useFafoStore = create<AppState & Actions>()(
 
       addTask: (t) => {
         const task: Task = {
-          id: uid(),
+          id: "t-" + uid(),
           createdAt: Date.now(),
           done: false,
           ...t,
         };
         set((s) => ({ tasks: [task, ...s.tasks] }));
+        bg("addTask", () => api.upsertTask(task, 0));
         return task;
       },
-      updateTask: (id, patch) =>
+      updateTask: (id, patch) => {
         set((s) => ({
           tasks: s.tasks.map((t) => (t.id === id ? { ...t, ...patch } : t)),
-        })),
+        }));
+        bg("updateTask", () => api.updateTaskApi(id, patch));
+      },
       toggleTask: (id) => {
         const t = get().tasks.find((x) => x.id === id);
         if (!t) return;
         const now = Date.now();
+        const becomesDone = !t.done;
         set((s) => ({
           tasks: s.tasks.map((x) =>
             x.id === id
-              ? { ...x, done: !x.done, completedAt: !x.done ? now : undefined }
+              ? {
+                  ...x,
+                  done: becomesDone,
+                  completedAt: becomesDone ? now : undefined,
+                }
               : x
           ),
-          xp: s.xp + (!t.done ? xpForPriority(t.priority) : -xpForPriority(t.priority)),
+          xp:
+            s.xp +
+            (becomesDone
+              ? xpForPriority(t.priority)
+              : -xpForPriority(t.priority)),
         }));
+        bg("toggleTask", () =>
+          api.updateTaskApi(id, {
+            done: becomesDone,
+            completedAt: becomesDone ? now : undefined,
+          })
+        );
       },
-      deleteTask: (id) =>
-        set((s) => ({ tasks: s.tasks.filter((t) => t.id !== id) })),
+      deleteTask: (id) => {
+        set((s) => ({ tasks: s.tasks.filter((t) => t.id !== id) }));
+        bg("deleteTask", () => api.deleteTaskApi(id));
+      },
 
-      reorderTask: (srcId, targetId) =>
+      reorderTask: (srcId, targetId) => {
         set((s) => {
           if (srcId === targetId) return s;
           const tasks = [...s.tasks];
@@ -91,26 +129,56 @@ export const useFafoStore = create<AppState & Actions>()(
           const [moved] = tasks.splice(srcIdx, 1);
           const newTargetIdx = tasks.findIndex((t) => t.id === targetId);
           if (newTargetIdx === -1) {
-            // Target desaparecio: pusheamos al final
             tasks.push(moved);
           } else {
             tasks.splice(newTargetIdx, 0, moved);
           }
           return { tasks };
-        }),
+        });
+        bg("reorderTask", () =>
+          api.reorderTasksApi(get().tasks.map((t) => t.id))
+        );
+      },
 
       addRoutine: (r) => {
-        const routine: Routine = { id: uid(), createdAt: Date.now(), ...r };
+        const routine: Routine = {
+          id: "rt-" + uid(),
+          createdAt: Date.now(),
+          ...r,
+        };
         set((s) => ({ routines: [routine, ...s.routines] }));
+        bg("addRoutine", () => api.upsertRoutine(routine));
         return routine;
       },
-      updateRoutine: (id, patch) =>
+      updateRoutine: (id, patch) => {
         set((s) => ({
           routines: s.routines.map((r) =>
             r.id === id ? { ...r, ...patch } : r
           ),
-        })),
-      shiftRoutine: (id, deltaHours) =>
+        }));
+        bg("updateRoutine", () => api.updateRoutineApi(id, patch));
+      },
+      shiftRoutine: (id, deltaHours) => {
+        // capturamos para sync despues del set
+        const fireSyncAfter = () => {
+          const s = get();
+          const r = s.routines.find((x) => x.id === id);
+          if (r)
+            bg("shiftRoutine.routine", () =>
+              api.updateRoutineApi(id, {
+                startHour: r.startHour,
+                endHour: r.endHour,
+              })
+            );
+          for (const t of s.tasks.filter((x) => x.routineId === id)) {
+            bg("shiftRoutine.task", () =>
+              api.updateTaskApi(t.id, {
+                startHour: t.startHour,
+                endHour: t.endHour,
+              })
+            );
+          }
+        };
         set((s) => {
           const routine = s.routines.find((r) => r.id === id);
           if (!routine) return s;
@@ -142,50 +210,77 @@ export const useFafoStore = create<AppState & Actions>()(
               };
             }),
           };
-        }),
-      deleteRoutine: (id) =>
+        });
+        fireSyncAfter();
+      },
+      deleteRoutine: (id) => {
         set((s) => ({
           routines: s.routines.filter((r) => r.id !== id),
           tasks: s.tasks.map((t) =>
             t.routineId === id ? { ...t, routineId: undefined } : t
           ),
-        })),
+        }));
+        bg("deleteRoutine", () => api.deleteRoutineApi(id));
+      },
 
       addPerson: (p) => {
-        const person: Person = { id: uid(), createdAt: Date.now(), ...p };
+        const person: Person = {
+          id: "person-" + uid(),
+          createdAt: Date.now(),
+          ...p,
+        };
         set((s) => ({ people: [...s.people, person] }));
+        bg("addPerson", () => api.upsertPerson(person));
         return person;
       },
-      updatePerson: (id, patch) =>
+      updatePerson: (id, patch) => {
         set((s) => ({
           people: s.people.map((p) => (p.id === id ? { ...p, ...patch } : p)),
-        })),
-      deletePerson: (id) =>
-        set((s) => {
-          const target = s.people.find((p) => p.id === id);
-          if (!target || target.isSelf) return s;
-          return {
-            people: s.people.filter((p) => p.id !== id),
-            // unassign tasks/routines that pointed to this person
-            tasks: s.tasks.map((t) =>
-              t.personId === id ? { ...t, personId: undefined } : t
-            ),
-            routines: s.routines.map((r) =>
-              r.personId === id ? { ...r, personId: undefined } : r
-            ),
-          };
-        }),
+        }));
+        bg("updatePerson", () => api.updatePersonApi(id, patch));
+      },
+      deletePerson: (id) => {
+        const target = get().people.find((p) => p.id === id);
+        if (!target || target.isSelf) return;
+        set((s) => ({
+          people: s.people.filter((p) => p.id !== id),
+          tasks: s.tasks.map((t) =>
+            t.personId === id ? { ...t, personId: undefined } : t
+          ),
+          routines: s.routines.map((r) =>
+            r.personId === id ? { ...r, personId: undefined } : r
+          ),
+        }));
+        bg("deletePerson", () => api.deletePersonApi(id));
+      },
 
       addLocation: (l) => {
-        const loc: SavedLocation = { id: uid(), ...l };
+        const loc: SavedLocation = { id: "loc-" + uid(), ...l };
         set((s) => ({ locations: [...s.locations, loc] }));
+        bg("addLocation", () => api.upsertLocation(loc));
         return loc;
       },
-      deleteLocation: (id) =>
-        set((s) => ({ locations: s.locations.filter((l) => l.id !== id) })),
-      setCurrentLocation: (id) => set({ currentLocationId: id }),
-      setUseRealGps: (v) => set({ useRealGps: v }),
-      setDailyGoal: (n) => set({ dailyGoal: Math.max(1, n) }),
+      deleteLocation: (id) => {
+        set((s) => ({ locations: s.locations.filter((l) => l.id !== id) }));
+        bg("deleteLocation", () => api.deleteLocationApi(id));
+      },
+      setCurrentLocation: (id) => {
+        set({ currentLocationId: id });
+        bg("setCurrentLocation", () =>
+          api.upsertUserSettings({ current_location_id: id })
+        );
+      },
+      setUseRealGps: (v) => {
+        set({ useRealGps: v });
+        bg("setUseRealGps", () =>
+          api.upsertUserSettings({ use_real_gps: v })
+        );
+      },
+      setDailyGoal: (n) => {
+        const goal = Math.max(1, n);
+        set({ dailyGoal: goal });
+        bg("setDailyGoal", () => api.upsertUserSettings({ daily_goal: goal }));
+      },
 
       recordTodayLog: () => {
         const today = new Date().toISOString().slice(0, 10);
@@ -218,9 +313,34 @@ export const useFafoStore = create<AppState & Actions>()(
 
       resetAll: () => set(() => ({ ...SEED_STATE })),
 
-      setTheme: (t) => set({ theme: t }),
-      toggleTheme: () =>
-        set((s) => ({ theme: s.theme === "dark" ? "light" : "dark" })),
+      setTheme: (t) => {
+        set({ theme: t });
+        bg("setTheme", () => api.upsertUserSettings({ theme: t }));
+      },
+      toggleTheme: () => {
+        const next = get().theme === "dark" ? "light" : "dark";
+        set({ theme: next });
+        bg("toggleTheme", () => api.upsertUserSettings({ theme: next }));
+      },
+
+      hydrate: (snap) => {
+        const settings = snap.settings;
+        set((s) => ({
+          ...s,
+          people: snap.people.length > 0 ? snap.people : s.people,
+          locations: snap.locations,
+          routines: snap.routines,
+          tasks: snap.tasks,
+          dailyLogs: snap.dailyLogs,
+          dailyGoal: settings?.daily_goal ?? s.dailyGoal,
+          currentLocationId:
+            settings?.current_location_id ?? s.currentLocationId,
+          useRealGps: settings?.use_real_gps ?? s.useRealGps,
+          theme: settings?.theme ?? s.theme,
+          xp: settings?.xp ?? s.xp,
+          longestStreak: settings?.longest_streak ?? s.longestStreak,
+        }));
+      },
     }),
     {
       name: "fafo-state-v1",

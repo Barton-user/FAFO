@@ -1,6 +1,7 @@
 "use client";
 
 import { useFafoStore } from "@/lib/store";
+import { useSyncStore } from "@/lib/syncStore";
 import { useEffect, useRef, useState } from "react";
 
 interface Toast {
@@ -79,6 +80,20 @@ export function NotificationToaster() {
     const id = setInterval(check, 30 * 60 * 1000);
     return () => clearInterval(id);
   }, [tasks, dailyGoal]);
+
+  // Sync errors → toast
+  const syncError = useSyncStore((s) => s.lastError);
+  const setSyncError = useSyncStore((s) => s.setError);
+  const lastErrorRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (syncError && syncError !== lastErrorRef.current) {
+      lastErrorRef.current = syncError;
+      push("warn", `Sync: ${syncError}`);
+      // Auto-clear despues de 6s para que pueda volver a alertar
+      const id = setTimeout(() => setSyncError(null), 6000);
+      return () => clearTimeout(id);
+    }
+  }, [syncError, setSyncError]);
 
   // Request notification permission on first mount
   useEffect(() => {

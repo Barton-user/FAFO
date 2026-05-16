@@ -56,25 +56,29 @@ create index if not exists routines_location_idx on public.routines(location_id)
 
 -- --------- 5. TABLA: tasks ---------
 create table if not exists public.tasks (
-  id            text          primary key,
-  user_id       uuid          not null references auth.users(id) on delete cascade,
-  name          text          not null,
-  notes         text,
-  priority      smallint      not null default 2 check (priority between 0 and 3),
-  done          boolean       not null default false,
-  weekdays      smallint[]    not null default '{}',
-  start_hour    numeric(5,2)  not null default 9,
-  end_hour      numeric(5,2)  not null default 10,
-  routine_id    text          references public.routines(id)  on delete set null,
-  location_id   text          references public.locations(id) on delete set null,
-  person_id     text          references public.people(id)    on delete set null,
-  is_vital      boolean       not null default false,
-  flexible      boolean       not null default false,
-  sort_index    integer       not null default 0,
-  completed_at  timestamptz,
-  created_at    timestamptz   not null default now(),
-  updated_at    timestamptz   not null default now()
+  id                     text          primary key,
+  user_id                uuid          not null references auth.users(id) on delete cascade,
+  name                   text          not null,
+  notes                  text,
+  priority               smallint      not null default 2 check (priority between 0 and 3),
+  done                   boolean       not null default false,
+  weekdays               smallint[]    not null default '{}',
+  start_hour             numeric(5,2)  not null default 9,
+  end_hour               numeric(5,2)  not null default 10,
+  routine_id             text          references public.routines(id)  on delete set null,
+  location_id            text          references public.locations(id) on delete set null,
+  person_id              text          references public.people(id)    on delete set null,
+  is_vital               boolean       not null default false,
+  flexible               boolean       not null default false,
+  recurring_in_routine   boolean       not null default false,
+  sort_index             integer       not null default 0,
+  completed_at           timestamptz,
+  created_at             timestamptz   not null default now(),
+  updated_at             timestamptz   not null default now()
 );
+-- ALTER si la tabla ya existia sin la columna nueva
+alter table public.tasks
+  add column if not exists recurring_in_routine boolean not null default false;
 create index if not exists tasks_user_idx     on public.tasks(user_id);
 create index if not exists tasks_routine_idx  on public.tasks(routine_id);
 create index if not exists tasks_person_idx   on public.tasks(person_id);

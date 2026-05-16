@@ -8,6 +8,7 @@ import { NotificationToaster } from "@/components/NotificationToaster";
 import { Fab } from "@/components/Fab";
 import { TodoPanel } from "@/components/TodoPanel";
 import { AuthGate } from "@/components/AuthGate";
+import { SearchModal } from "@/components/SearchModal";
 import { useFafoStore } from "@/lib/store";
 import { useResolvedContext } from "@/lib/context";
 import { useMounted } from "@/lib/useNow";
@@ -35,6 +36,7 @@ function HomeInner() {
   const [selectedDate, setSelectedDate] = useState<string>(() => todayISO());
   const [viewingPersonId, setViewingPersonId] = useState<string | null>(null);
   const [todoOpen, setTodoOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
 
   const recordTodayLog = useFafoStore((s) => s.recordTodayLog);
   const theme = useFafoStore((s) => s.theme);
@@ -51,6 +53,19 @@ function HomeInner() {
     if (typeof document === "undefined") return;
     document.documentElement.dataset.theme = theme;
   }, [theme]);
+
+  // Hotkey: Ctrl/Cmd + K abre busqueda
+  useEffect(() => {
+    if (!mounted) return;
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setSearchOpen((o) => !o);
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [mounted]);
 
   if (!mounted) {
     return (
@@ -160,6 +175,11 @@ function HomeInner() {
       />
       <NotificationToaster />
       <Fab onNewTask={handleNewTask} onNewRoutine={handleNewRoutine} />
+      <SearchModal
+        open={searchOpen}
+        onClose={() => setSearchOpen(false)}
+        onSelectTask={(id) => setEditing(id)}
+      />
     </main>
   );
 }

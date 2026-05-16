@@ -2,6 +2,8 @@
 
 import { useFafoStore } from "@/lib/store";
 import { useResolvedContext } from "@/lib/context";
+import { useAuth } from "@/lib/auth";
+import { useSyncStore } from "@/lib/syncStore";
 import { Avatar } from "./Avatar";
 import { useMemo } from "react";
 import type { ViewMode, Weekday } from "@/lib/types";
@@ -58,6 +60,9 @@ export function StatusBar({
   const isAll = viewingPersonId === "__all__";
   const theme = useFafoStore((s) => s.theme);
   const toggleTheme = useFafoStore((s) => s.toggleTheme);
+  const { user, signOut } = useAuth();
+  const syncPending = useSyncStore((s) => s.pending);
+  const syncError = useSyncStore((s) => s.lastError);
   const viewing =
     !isAll && viewingPersonId && people.find((p) => p.id === viewingPersonId)
       ? people.find((p) => p.id === viewingPersonId)!
@@ -265,6 +270,26 @@ export function StatusBar({
           ))}
         </select>
 
+        {/* Sync status — puntito que pulsa cuando hay mutaciones en vuelo */}
+        <div className="flex items-center gap-1.5">
+          {syncPending > 0 ? (
+            <span
+              title={`${syncPending} cambio${syncPending !== 1 ? "s" : ""} sincronizando...`}
+              className="w-2 h-2 rounded-full bg-fafo-accent2 animate-pulse"
+            />
+          ) : syncError ? (
+            <span
+              title={`Error de sync: ${syncError}`}
+              className="w-2 h-2 rounded-full bg-red-500"
+            />
+          ) : (
+            <span
+              title="Todo sincronizado"
+              className="w-2 h-2 rounded-full bg-fafo-muted/30"
+            />
+          )}
+        </div>
+
         <Avatar compact />
 
         <button
@@ -296,6 +321,19 @@ export function StatusBar({
         >
           Gestionar
         </button>
+
+        {user && (
+          <button
+            onClick={async () => {
+              if (confirm("Cerrar sesion?")) await signOut();
+            }}
+            className="w-8 h-8 rounded-md border border-fafo-border hover:border-fafo-accent text-fafo-text flex items-center justify-center text-sm"
+            title={`Cerrar sesion (${user.email ?? "yo"})`}
+            aria-label="Logout"
+          >
+            ⎋
+          </button>
+        )}
       </div>
 
       {/* Row 2: view switcher + date nav */}
