@@ -6,6 +6,8 @@ import { TaskModal } from "@/components/TaskModal";
 import { SettingsDrawer, type SettingsTab } from "@/components/SettingsDrawer";
 import { NotificationToaster } from "@/components/NotificationToaster";
 import { Fab } from "@/components/Fab";
+import { TodoPanel } from "@/components/TodoPanel";
+import { AuthGate } from "@/components/AuthGate";
 import { useFafoStore } from "@/lib/store";
 import { useResolvedContext } from "@/lib/context";
 import { useMounted } from "@/lib/useNow";
@@ -14,6 +16,14 @@ import type { ViewMode, Weekday } from "@/lib/types";
 import { useState, useEffect } from "react";
 
 export default function Home() {
+  return (
+    <AuthGate>
+      <HomeInner />
+    </AuthGate>
+  );
+}
+
+function HomeInner() {
   const mounted = useMounted();
   const [draft, setDraft] = useState<DragPayload | null>(null);
   const [editing, setEditing] = useState<string | null>(null);
@@ -24,6 +34,7 @@ export default function Home() {
   const [viewMode, setViewMode] = useState<ViewMode>("week");
   const [selectedDate, setSelectedDate] = useState<string>(() => todayISO());
   const [viewingPersonId, setViewingPersonId] = useState<string | null>(null);
+  const [todoOpen, setTodoOpen] = useState(false);
 
   const recordTodayLog = useFafoStore((s) => s.recordTodayLog);
   const theme = useFafoStore((s) => s.theme);
@@ -97,24 +108,36 @@ export default function Home() {
         viewMode={viewMode}
         selectedDate={selectedDate}
         viewingPersonId={viewingPersonId}
+        todoOpen={todoOpen}
         onChangeViewMode={setViewMode}
         onChangeDate={setSelectedDate}
         onChangeViewingPerson={setViewingPersonId}
+        onToggleTodo={() => setTodoOpen((o) => !o)}
         onOpenSettings={() => {
           setSettingsTab(undefined);
           setSettingsOpen(true);
         }}
       />
       <ContextHint />
-      <Calendar
-        viewMode={viewMode}
-        selectedDate={selectedDate}
-        viewingPersonId={viewingPersonId}
-        onSelectDate={handleSelectDate}
-        onDragComplete={(p) => setDraft(p)}
-        onTaskClick={(id) => setEditing(id)}
-        onRoutineEdit={handleEditRoutine}
-      />
+      <div className="flex flex-1 overflow-hidden">
+        <Calendar
+          viewMode={viewMode}
+          selectedDate={selectedDate}
+          viewingPersonId={viewingPersonId}
+          onSelectDate={handleSelectDate}
+          onDragComplete={(p) => setDraft(p)}
+          onTaskClick={(id) => setEditing(id)}
+          onRoutineEdit={handleEditRoutine}
+        />
+        <TodoPanel
+          open={todoOpen}
+          viewMode={viewMode}
+          selectedDate={selectedDate}
+          viewingPersonId={viewingPersonId}
+          onClose={() => setTodoOpen(false)}
+          onEditTask={(id) => setEditing(id)}
+        />
+      </div>
       <FooterLegend viewMode={viewMode} />
       <TaskModal
         open={!!draft}

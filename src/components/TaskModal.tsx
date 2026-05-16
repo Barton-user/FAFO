@@ -58,6 +58,7 @@ export function TaskModal({
   const [endHour, setEndHour] = useState(10);
   const [personId, setPersonId] = useState<string | undefined>(undefined);
   const [isVital, setIsVital] = useState(false);
+  const [flexible, setFlexible] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -71,6 +72,7 @@ export function TaskModal({
       setEndHour(task.endHour);
       setPersonId(task.personId);
       setIsVital(!!task.isVital);
+      setFlexible(!!task.flexible);
     } else if (newDraft) {
       setName("");
       setPriority(2);
@@ -81,6 +83,7 @@ export function TaskModal({
       setEndHour(newDraft.endHour);
       setPersonId(newDraft.personId);
       setIsVital(false);
+      setFlexible(false);
     }
   }, [open, task, newDraft]);
 
@@ -105,6 +108,7 @@ export function TaskModal({
       endHour: Math.max(startHour + 0.25, endHour),
       personId,
       isVital: priority === 0 ? true : isVital,
+      flexible,
     };
     if (editingTaskId) {
       updateTask(editingTaskId, payload);
@@ -180,37 +184,52 @@ export function TaskModal({
             )}
           </div>
 
+          {/* Flexible (sin horario fijo) */}
+          <label className="flex items-center gap-2 text-xs cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={flexible}
+              onChange={(e) => setFlexible(e.target.checked)}
+              className="accent-fafo-accent w-4 h-4"
+            />
+            <span className={flexible ? "text-fafo-text font-semibold" : "text-fafo-muted"}>
+              Sin horario fijo (todo el dia / orden libre)
+            </span>
+          </label>
+
           {/* Time */}
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="text-[10px] uppercase tracking-wider text-fafo-muted">
-                Desde
-              </label>
-              <input
-                type="time"
-                value={hourToStr(startHour)}
-                onChange={(e) => {
-                  const [h, m] = e.target.value.split(":").map(Number);
-                  setStartHour(h + m / 60);
-                }}
-                className="w-full bg-fafo-bg border border-fafo-border rounded-md px-2 py-1.5 text-sm mt-1.5 outline-none focus:border-fafo-accent"
-              />
+          {!flexible && (
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-[10px] uppercase tracking-wider text-fafo-muted">
+                  Desde
+                </label>
+                <input
+                  type="time"
+                  value={hourToStr(startHour)}
+                  onChange={(e) => {
+                    const [h, m] = e.target.value.split(":").map(Number);
+                    setStartHour(h + m / 60);
+                  }}
+                  className="w-full bg-fafo-bg border border-fafo-border rounded-md px-2 py-1.5 text-sm mt-1.5 outline-none focus:border-fafo-accent"
+                />
+              </div>
+              <div>
+                <label className="text-[10px] uppercase tracking-wider text-fafo-muted">
+                  Hasta
+                </label>
+                <input
+                  type="time"
+                  value={hourToStr(endHour)}
+                  onChange={(e) => {
+                    const [h, m] = e.target.value.split(":").map(Number);
+                    setEndHour(h + m / 60);
+                  }}
+                  className="w-full bg-fafo-bg border border-fafo-border rounded-md px-2 py-1.5 text-sm mt-1.5 outline-none focus:border-fafo-accent"
+                />
+              </div>
             </div>
-            <div>
-              <label className="text-[10px] uppercase tracking-wider text-fafo-muted">
-                Hasta
-              </label>
-              <input
-                type="time"
-                value={hourToStr(endHour)}
-                onChange={(e) => {
-                  const [h, m] = e.target.value.split(":").map(Number);
-                  setEndHour(h + m / 60);
-                }}
-                className="w-full bg-fafo-bg border border-fafo-border rounded-md px-2 py-1.5 text-sm mt-1.5 outline-none focus:border-fafo-accent"
-              />
-            </div>
-          </div>
+          )}
 
           {/* Weekdays */}
           <div>

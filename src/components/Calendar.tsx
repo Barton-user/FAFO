@@ -13,6 +13,8 @@ import {
   isSameMonth,
   WEEKDAYS_SHORT,
 } from "@/lib/dateUtils";
+import { placeFlexTasksInDay } from "@/lib/flexPlacement";
+import { isTaskDoneForDay, toggleDonePatch } from "@/lib/taskState";
 import clsx from "clsx";
 
 const HOUR_START = 5;
@@ -21,6 +23,7 @@ const HOUR_HEIGHT = 52;
 const TOTAL_HEIGHT = (HOUR_END - HOUR_START) * HOUR_HEIGHT;
 const SNAP_MIN = 15;
 const MIN_DURATION = 0.25;
+const ALLDAY_BAND_HEIGHT = 56;
 
 export interface DragPayload {
   startHour: number;
@@ -114,6 +117,128 @@ export function Calendar(props: Props) {
   return <DayView {...props} />;
 }
 
+/* ---------- PlacedFlexBlock — flex task ubicada automaticamente en la timeline ---------- */
+
+interface PlacedFlexBlockProps {
+  task: Task;
+  top: number;
+  height: number;
+  dayISO: string;
+  compact?: boolean;
+  isOverdue?: boolean;
+  onOpen: () => void;
+}
+
+function PlacedFlexBlock({
+  task,
+  top,
+  height,
+  dayISO,
+  compact,
+  isOverdue,
+  onOpen,
+}: PlacedFlexBlockProps) {
+  const updateTask = useFafoStore((s) => s.updateTask);
+  const isVital = task.isVital || task.priority === 0;
+  const isDone = isTaskDoneForDay(task, dayISO);
+
+  return (
+    <button
+      onClick={(e) => {
+        e.stopPropagation();
+        onOpen();
+      }}
+      onDoubleClick={(e) => {
+        e.stopPropagation();
+        updateTask(task.id, toggleDonePatch(task, dayISO));
+      }}
+      onPointerDown={(e) => e.stopPropagation()}
+      style={{ top, height }}
+      className={clsx(
+        "absolute text-left rounded-md shadow-sm overflow-hidden",
+        "focus:outline-none focus:ring-2 focus:ring-fafo-accent",
+        "border border-dashed",
+        compact ? "left-1 right-1 p-1.5 text-[11px]" : "left-1.5 right-1.5 p-2 text-[12px]",
+        // Estado: done → verde, overdue → rojo, default → pastel por prioridad
+        isDone
+          ? "bg-emerald-100 text-emerald-900 border-emerald-400 line-through"
+          : isOverdue
+            ? "bg-red-100 text-red-900 border-red-400 ring-1 ring-red-300"
+            : clsx(
+                "text-fafo-text",
+                task.priority === 0 && "bg-[#FFE0E6] border-[#DD7493]/60",
+                task.priority === 1 && "bg-[#FFE9D5] border-[#E89E5C]/60",
+                task.priority === 2 && "bg-[#DFEEF5] border-[#5BACC4]/60",
+                task.priority === 3 && "bg-[#EBE6F2] border-[#9B8FBC]/60"
+              ),
+        isVital && !isDone && !isOverdue && "vital-task",
+        "hover:shadow-md transition-shadow cursor-pointer"
+      )}
+      title={`${task.name} · sin horario fijo`}
+    >
+      <div className="flex items-center gap-1 pointer-events-none">
+        <span className="text-[8px] opacity-60">⋯</span>
+        <span
+          className={clsx(
+            "w-1 h-1 rounded-full shrink-0",
+            PRIORITY_DOT[task.priority]
+          )}
+        />
+        <span className="font-semibold truncate leading-tight">
+          {task.name}
+        </span>
+      </div>
+    </button>
+  );
+}
+
+/* ---------- FlexibleTaskChip ---------- */
+
+interface FlexibleChipProps {
+  task: Task;
+  routines: Routine[];
+  onOpen: () => void;
+}
+
+function FlexibleChip({ task, routines, onOpen }: FlexibleChipProps) {
+  const toggleTask = useFafoStore((s) => s.toggleTask);
+  const isVital = task.isVital || task.priority === 0;
+  const parentRoutine = task.routineId
+    ? routines.find((r) => r.id === task.routineId)
+    : null;
+  return (
+    <button
+      onClick={(e) => {
+        e.stopPropagation();
+        onOpen();
+      }}
+      onDoubleClick={(e) => {
+        e.stopPropagation();
+        toggleTask(task.id);
+      }}
+      onPointerDown={(e) => e.stopPropagation()}
+      className={clsx(
+        "h-7 px-2 rounded-full text-[11px] font-medium shrink-0 cursor-pointer flex items-center gap-1.5 shadow-sm hover:shadow transition-shadow max-w-[200px]",
+        PRIORITY_BG[task.priority],
+        isVital && "vital-task ring-1 ring-white/70",
+        task.done && "opacity-40 line-through grayscale"
+      )}
+      title={
+        parentRoutine
+          ? `${task.name} · en ${parentRoutine.name}`
+          : task.name
+      }
+    >
+      <span className="truncate">{task.name}</span>
+      {parentRoutine && (
+        <span className="text-[9px] opacity-75 truncate">
+          ↳ {parentRoutine.name.slice(0, 10)}
+        </span>
+      )}
+    </button>
+  );
+}
+
 /* ---------- TaskBlock ---------- */
 
 interface TaskBlockProps {
@@ -123,6 +248,7 @@ interface TaskBlockProps {
   compact?: boolean;
   routinesInScope: Routine[];
   showOwnerEmoji?: boolean;
+  isOverdue?: boolean;
   onOpen: () => void;
 }
 
@@ -133,6 +259,7 @@ function TaskBlock({
   compact,
   routinesInScope,
   showOwnerEmoji,
+  isOverdue,
   onOpen,
 }: TaskBlockProps) {
   const updateTask = useFafoStore((s) => s.updateTask);
@@ -280,9 +407,13 @@ function TaskBlock({
         "focus:outline-none focus:ring-2 focus:ring-fafo-accent",
         insetClass,
         compact ? "p-1.5 text-[11px]" : "p-2 text-xs",
-        PRIORITY_BG[task.priority],
-        isVital && "vital-task ring-2 ring-white/80",
-        task.done && "opacity-40 line-through grayscale",
+        // Color: done → verde, overdue → rojo, default → prioridad
+        task.done
+          ? "bg-emerald-200 text-emerald-900 line-through"
+          : isOverdue
+            ? "bg-red-200 text-red-900 ring-2 ring-red-400"
+            : PRIORITY_BG[task.priority],
+        isVital && !task.done && !isOverdue && "vital-task ring-2 ring-white/80",
         drag
           ? "shadow-2xl ring-2 ring-fafo-text/40 z-30 cursor-grabbing scale-[1.02]"
           : "cursor-grab hover:shadow-xl transition-all z-20",
@@ -353,13 +484,33 @@ interface RoutineBlockProps {
   top: number;
   height: number;
   compact?: boolean;
+  flexTasks?: Task[];
+  /** Si esta seteado, se usa como hora "ahora" para marcar las flex internas como vencidas
+   * (typicamente ctx.hour si dayISO == today, sino null). */
+  routineOverdueRef?: number | null;
   onEdit?: () => void;
+  onFlexTaskOpen?: (taskId: string) => void;
 }
 
-function RoutineBlock({ routine, top, height, compact, onEdit }: RoutineBlockProps) {
+function RoutineBlock({
+  routine,
+  top,
+  height,
+  compact,
+  flexTasks,
+  routineOverdueRef,
+  onEdit,
+  onFlexTaskOpen,
+}: RoutineBlockProps) {
   const updateRoutine = useFafoStore((s) => s.updateRoutine);
   const shiftRoutine = useFafoStore((s) => s.shiftRoutine);
   const deleteRoutine = useFafoStore((s) => s.deleteRoutine);
+  const toggleTask = useFafoStore((s) => s.toggleTask);
+  const reorderTask = useFafoStore((s) => s.reorderTask);
+
+  // Estado de drag reorder de chips internos
+  const [chipDraggingId, setChipDraggingId] = useState<string | null>(null);
+  const [chipDragOverId, setChipDragOverId] = useState<string | null>(null);
 
   const didMoveRef = useRef(false);
   const [drag, setDrag] = useState<{
@@ -526,6 +677,99 @@ function RoutineBlock({ routine, top, height, compact, onEdit }: RoutineBlockPro
         <div className="absolute left-1/2 -translate-x-1/2 bottom-0.5 w-8 h-0.5 rounded-full bg-transparent group-hover/bot:bg-fafo-text/60 transition-colors" />
       </div>
 
+      {/* Lista de flex tasks dentro de la rutina */}
+      {flexTasks && flexTasks.length > 0 && (
+        <div
+          className="absolute left-1.5 right-7 top-9 bottom-2 flex flex-col gap-1 pointer-events-none overflow-y-auto"
+        >
+          {flexTasks.map((t) => {
+            const isDone = !!t.done;
+            const isOverdue =
+              !isDone && routineOverdueRef && routine.endHour <= routineOverdueRef;
+            const isDragging = chipDraggingId === t.id;
+            const isDragOver =
+              chipDragOverId === t.id && chipDraggingId !== t.id;
+            return (
+              <button
+                key={t.id}
+                draggable
+                onDragStart={(e) => {
+                  e.stopPropagation();
+                  e.dataTransfer.setData("text/task-id", t.id);
+                  e.dataTransfer.effectAllowed = "move";
+                  setChipDraggingId(t.id);
+                }}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  e.dataTransfer.dropEffect = "move";
+                  setChipDragOverId(t.id);
+                }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  const srcId = e.dataTransfer.getData("text/task-id");
+                  if (srcId && srcId !== t.id) reorderTask(srcId, t.id);
+                  setChipDraggingId(null);
+                  setChipDragOverId(null);
+                }}
+                onDragEnd={() => {
+                  setChipDraggingId(null);
+                  setChipDragOverId(null);
+                }}
+                onPointerDown={(e) => e.stopPropagation()}
+                onDoubleClick={(e) => {
+                  e.stopPropagation();
+                  toggleTask(t.id);
+                }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onFlexTaskOpen?.(t.id);
+                }}
+                className={clsx(
+                  "pointer-events-auto px-2.5 py-1.5 rounded-md flex items-center gap-2 shadow-md hover:shadow-lg transition-all shrink-0 max-w-full text-left cursor-move",
+                  "ring-1 ring-fafo-text/5",
+                  compact ? "text-[11px]" : "text-[13px]",
+                  isDone
+                    ? "bg-emerald-200 text-emerald-900 line-through"
+                    : isOverdue
+                      ? "bg-red-200 text-red-900 ring-1 ring-red-400"
+                      : "bg-fafo-panel/95 text-fafo-text",
+                  isDragging && "opacity-30",
+                  isDragOver && "ring-2 ring-fafo-accent border-t-2 border-fafo-accent"
+                )}
+                title={`${t.name}${isDone ? " (hecha)" : isOverdue ? " (vencida)" : ""} · click: editar · doble click: marcar · arrastra para reordenar`}
+              >
+                <span
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    toggleTask(t.id);
+                  }}
+                  className={clsx(
+                    "w-4 h-4 rounded-full border-2 flex items-center justify-center text-[10px] shrink-0 cursor-pointer",
+                    isDone
+                      ? "bg-fafo-accent2 border-fafo-accent2 text-white"
+                      : "border-fafo-muted/60 hover:border-fafo-accent"
+                  )}
+                >
+                  {isDone && <span className="leading-none">✓</span>}
+                </span>
+                <span
+                  className={clsx(
+                    "w-1.5 h-1.5 rounded-full shrink-0",
+                    PRIORITY_DOT[t.priority]
+                  )}
+                />
+                <span className="truncate font-medium flex-1">{t.name}</span>
+                <span className="text-fafo-muted/40 text-[10px] select-none shrink-0">
+                  ⋮⋮
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
       {/* Live label while dragging */}
       {drag && (
         <div className="absolute left-1/2 -translate-x-1/2 top-1/2 -translate-y-1/2 text-[10px] font-mono bg-fafo-panel/95 text-fafo-text px-2 py-1 rounded shadow pointer-events-none">
@@ -580,6 +824,7 @@ function DayView({
     const map = new Map<string, Task[]>();
     for (const p of visiblePeople) map.set(p.id, []);
     for (const t of tasks) {
+      if (t.flexible) continue; // las flexibles van a la banda superior
       if (!t.weekdays.includes(weekday) && !t.isVital) continue;
       if (
         !t.isVital &&
@@ -589,6 +834,49 @@ function DayView({
         continue;
       const owner = t.personId ?? visiblePeople[0]?.id;
       if (owner && map.has(owner)) map.get(owner)!.push(t);
+    }
+    return map;
+  }, [tasks, visiblePeople, weekday, ctx.activeLocation]);
+
+  // Banda superior: solo flexibles SIN routineId (las con rutina van adentro de la rutina)
+  const flexibleByPerson = useMemo(() => {
+    const map = new Map<string, Task[]>();
+    for (const p of visiblePeople) map.set(p.id, []);
+    for (const t of tasks) {
+      if (!t.flexible) continue;
+      if (t.routineId) continue;
+      if (!t.weekdays.includes(weekday) && !t.isVital) continue;
+      if (
+        !t.isVital &&
+        t.locationId &&
+        t.locationId !== ctx.activeLocation?.id
+      )
+        continue;
+      const owner = t.personId ?? visiblePeople[0]?.id;
+      if (owner && map.has(owner)) map.get(owner)!.push(t);
+    }
+    return map;
+  }, [tasks, visiblePeople, weekday, ctx.activeLocation]);
+
+  // Flex con routineId: agrupadas por persona + routine
+  const flexByRoutine = useMemo(() => {
+    const map = new Map<string, Map<string, Task[]>>();
+    for (const p of visiblePeople) map.set(p.id, new Map());
+    for (const t of tasks) {
+      if (!t.flexible || !t.routineId) continue;
+      if (!t.weekdays.includes(weekday) && !t.isVital) continue;
+      if (
+        !t.isVital &&
+        t.locationId &&
+        t.locationId !== ctx.activeLocation?.id
+      )
+        continue;
+      const owner = t.personId ?? visiblePeople[0]?.id;
+      if (!owner) continue;
+      const perPerson = map.get(owner);
+      if (!perPerson) continue;
+      if (!perPerson.has(t.routineId)) perPerson.set(t.routineId, []);
+      perPerson.get(t.routineId)!.push(t);
     }
     return map;
   }, [tasks, visiblePeople, weekday, ctx.activeLocation]);
@@ -681,7 +969,16 @@ function DayView({
         <div
           className="grid"
           style={{
-            gridTemplateColumns: `repeat(${visiblePeople.length}, minmax(240px, 1fr))`,
+            gridTemplateColumns: visiblePeople
+              .map((p) => {
+                if (isAll) return "minmax(180px, 1fr)";
+                const focusedId = viewingPersonId ?? visiblePeople.find((x) => x.isSelf)?.id;
+                const isFocused = p.id === focusedId;
+                return isFocused
+                  ? "minmax(360px, 9fr)"
+                  : "minmax(90px, 1fr)";
+              })
+              .join(" "),
           }}
         >
           {visiblePeople.map((p) => (
@@ -748,15 +1045,20 @@ function DayView({
                 {proutines.map((r) => {
                   const rtop = (r.startHour - HOUR_START) * HOUR_HEIGHT;
                   const rh = (r.endHour - r.startHour) * HOUR_HEIGHT;
+                  const flexInRoutine =
+                    flexByRoutine.get(p.id)?.get(r.id) ?? [];
                   return (
                     <RoutineBlock
                       key={r.id}
                       routine={r}
                       top={rtop}
                       height={rh}
+                      flexTasks={flexInRoutine}
+                      routineOverdueRef={isToday ? ctx.hour : null}
                       onEdit={
                         onRoutineEdit ? () => onRoutineEdit(r.id) : undefined
                       }
+                      onFlexTaskOpen={onTaskClick}
                     />
                   );
                 })}
@@ -767,6 +1069,8 @@ function DayView({
                     28,
                     (t.endHour - t.startHour) * HOUR_HEIGHT - 4
                   );
+                  const isOverdue =
+                    isToday && !t.done && t.endHour <= ctx.hour;
                   return (
                     <TaskBlock
                       key={t.id}
@@ -774,7 +1078,36 @@ function DayView({
                       top={top}
                       height={height}
                       routinesInScope={proutines}
+                      isOverdue={isOverdue}
                       onOpen={() => onTaskClick(t.id)}
+                    />
+                  );
+                })}
+
+                {/* Flex sin rutina: ubicadas automaticamente en los huecos libres */}
+                {placeFlexTasksInDay({
+                  flexTasks: flexibleByPerson.get(p.id) ?? [],
+                  scheduledTasks: ptasks,
+                  routines: proutines,
+                  dayStart: HOUR_START,
+                  dayEnd: HOUR_END,
+                  itemDuration: 0.75,
+                }).map(({ task, startHour, endHour }) => {
+                  const top = (startHour - HOUR_START) * HOUR_HEIGHT;
+                  const height = (endHour - startHour) * HOUR_HEIGHT - 2;
+                  const isOverdueFlex =
+                    isToday &&
+                    !isTaskDoneForDay(task, selectedDate) &&
+                    endHour <= ctx.hour;
+                  return (
+                    <PlacedFlexBlock
+                      key={task.id}
+                      task={task}
+                      top={top}
+                      height={height}
+                      dayISO={selectedDate}
+                      isOverdue={isOverdueFlex}
+                      onOpen={() => onTaskClick(task.id)}
                     />
                   );
                 })}
@@ -806,6 +1139,7 @@ function DayView({
               </div>
             );
           })}
+
         </div>
       </div>
     </div>
@@ -844,6 +1178,7 @@ function WeekView({
     const map = new Map<string, Task[]>();
     for (const d of days) map.set(d, []);
     for (const t of tasks) {
+      if (t.flexible) continue;
       const ownerId = t.personId ?? selfDefaultId;
       if (!isAll && ownerId !== selfId) continue;
       for (const d of days) {
@@ -856,6 +1191,55 @@ function WeekView({
         )
           continue;
         map.get(d)!.push(t);
+      }
+    }
+    return map;
+  }, [tasks, days, selfId, selfDefaultId, isAll, ctx.activeLocation]);
+
+  // Banda superior: solo flexibles SIN routineId
+  const flexibleByDay = useMemo(() => {
+    const map = new Map<string, Task[]>();
+    for (const d of days) map.set(d, []);
+    for (const t of tasks) {
+      if (!t.flexible) continue;
+      if (t.routineId) continue;
+      const ownerId = t.personId ?? selfDefaultId;
+      if (!isAll && ownerId !== selfId) continue;
+      for (const d of days) {
+        const w = parseISO(d).getDay() as Weekday;
+        if (!t.weekdays.includes(w) && !t.isVital) continue;
+        if (
+          !t.isVital &&
+          t.locationId &&
+          t.locationId !== ctx.activeLocation?.id
+        )
+          continue;
+        map.get(d)!.push(t);
+      }
+    }
+    return map;
+  }, [tasks, days, selfId, selfDefaultId, isAll, ctx.activeLocation]);
+
+  // Flex con routineId: agrupadas por dia + routine
+  const flexByDayRoutine = useMemo(() => {
+    const map = new Map<string, Map<string, Task[]>>();
+    for (const d of days) map.set(d, new Map());
+    for (const t of tasks) {
+      if (!t.flexible || !t.routineId) continue;
+      const ownerId = t.personId ?? selfDefaultId;
+      if (!isAll && ownerId !== selfId) continue;
+      for (const d of days) {
+        const w = parseISO(d).getDay() as Weekday;
+        if (!t.weekdays.includes(w) && !t.isVital) continue;
+        if (
+          !t.isVital &&
+          t.locationId &&
+          t.locationId !== ctx.activeLocation?.id
+        )
+          continue;
+        const perDay = map.get(d)!;
+        if (!perDay.has(t.routineId)) perDay.set(t.routineId, []);
+        perDay.get(t.routineId)!.push(t);
       }
     }
     return map;
@@ -1057,6 +1441,8 @@ function WeekView({
                 {droutines.map((r) => {
                   const rtop = (r.startHour - HOUR_START) * HOUR_HEIGHT;
                   const rh = (r.endHour - r.startHour) * HOUR_HEIGHT;
+                  const flexInRoutine =
+                    flexByDayRoutine.get(d)?.get(r.id) ?? [];
                   return (
                     <RoutineBlock
                       key={`${d}-${r.id}`}
@@ -1064,9 +1450,12 @@ function WeekView({
                       top={rtop}
                       height={rh}
                       compact
+                      flexTasks={flexInRoutine}
+                      routineOverdueRef={d === today ? ctx.hour : null}
                       onEdit={
                         onRoutineEdit ? () => onRoutineEdit(r.id) : undefined
                       }
+                      onFlexTaskOpen={onTaskClick}
                     />
                   );
                 })}
@@ -1077,6 +1466,8 @@ function WeekView({
                     22,
                     (t.endHour - t.startHour) * HOUR_HEIGHT - 4
                   );
+                  const isOverdueT =
+                    isToday && !t.done && t.endHour <= ctx.hour;
                   return (
                     <TaskBlock
                       key={`${d}-${t.id}`}
@@ -1086,7 +1477,37 @@ function WeekView({
                       compact
                       routinesInScope={droutines}
                       showOwnerEmoji={isAll}
+                      isOverdue={isOverdueT}
                       onOpen={() => onTaskClick(t.id)}
+                    />
+                  );
+                })}
+
+                {/* Flex sin rutina ubicadas en los huecos */}
+                {placeFlexTasksInDay({
+                  flexTasks: flexibleByDay.get(d) ?? [],
+                  scheduledTasks: dtasks,
+                  routines: droutines,
+                  dayStart: HOUR_START,
+                  dayEnd: HOUR_END,
+                  itemDuration: 0.75,
+                }).map(({ task, startHour, endHour }) => {
+                  const top = (startHour - HOUR_START) * HOUR_HEIGHT;
+                  const height = (endHour - startHour) * HOUR_HEIGHT - 2;
+                  const isOverdueFlex =
+                    isToday &&
+                    !isTaskDoneForDay(task, d) &&
+                    endHour <= ctx.hour;
+                  return (
+                    <PlacedFlexBlock
+                      key={`${d}-${task.id}`}
+                      task={task}
+                      top={top}
+                      height={height}
+                      dayISO={d}
+                      compact
+                      isOverdue={isOverdueFlex}
+                      onOpen={() => onTaskClick(task.id)}
                     />
                   );
                 })}
@@ -1117,6 +1538,7 @@ function WeekView({
               </div>
             );
           })}
+
         </div>
       </div>
     </div>
@@ -1308,6 +1730,7 @@ function WeekViewAll({
         <div className="grid" style={{ gridTemplateColumns: gridTemplate }}>
           {subCols.map(({ day, person, weekday }, idx) => {
             const ptasks = tasks.filter((t) => {
+              if (t.flexible) return false;
               const owner = t.personId ?? selfDefaultId;
               if (owner !== person.id) return false;
               if (!t.weekdays.includes(weekday) && !t.isVital) return false;
@@ -1378,6 +1801,14 @@ function WeekViewAll({
                 {proutines.map((r) => {
                   const rtop = (r.startHour - HOUR_START) * HOUR_HEIGHT;
                   const rh = (r.endHour - r.startHour) * HOUR_HEIGHT;
+                  const flexInRoutine = tasks.filter((t) => {
+                    if (!t.flexible || t.routineId !== r.id) return false;
+                    const owner = t.personId ?? selfDefaultId;
+                    if (owner !== person.id) return false;
+                    if (!t.weekdays.includes(weekday) && !t.isVital)
+                      return false;
+                    return true;
+                  });
                   return (
                     <RoutineBlock
                       key={`${day}-${r.id}`}
@@ -1385,9 +1816,12 @@ function WeekViewAll({
                       top={rtop}
                       height={rh}
                       compact
+                      flexTasks={flexInRoutine}
+                      routineOverdueRef={day === today ? ctx.hour : null}
                       onEdit={
                         onRoutineEdit ? () => onRoutineEdit(r.id) : undefined
                       }
+                      onFlexTaskOpen={onTaskClick}
                     />
                   );
                 })}
@@ -1398,6 +1832,8 @@ function WeekViewAll({
                     22,
                     (t.endHour - t.startHour) * HOUR_HEIGHT - 4
                   );
+                  const isOverdueT =
+                    isToday && !t.done && t.endHour <= ctx.hour;
                   return (
                     <TaskBlock
                       key={`${day}-${t.id}`}
@@ -1406,10 +1842,56 @@ function WeekViewAll({
                       height={height}
                       compact
                       routinesInScope={proutines}
+                      isOverdue={isOverdueT}
                       onOpen={() => onTaskClick(t.id)}
                     />
                   );
                 })}
+
+                {/* Flex sin rutina ubicadas en los huecos */}
+                {(() => {
+                  const flexInThisSub = tasks.filter((t) => {
+                    if (!t.flexible || t.routineId) return false;
+                    const owner = t.personId ?? selfDefaultId;
+                    if (owner !== person.id) return false;
+                    if (!t.weekdays.includes(weekday) && !t.isVital)
+                      return false;
+                    if (
+                      !t.isVital &&
+                      t.locationId &&
+                      t.locationId !== ctx.activeLocation?.id
+                    )
+                      return false;
+                    return true;
+                  });
+                  return placeFlexTasksInDay({
+                    flexTasks: flexInThisSub,
+                    scheduledTasks: ptasks,
+                    routines: proutines,
+                    dayStart: HOUR_START,
+                    dayEnd: HOUR_END,
+                    itemDuration: 0.75,
+                  }).map(({ task, startHour, endHour }) => {
+                    const top = (startHour - HOUR_START) * HOUR_HEIGHT;
+                    const height = (endHour - startHour) * HOUR_HEIGHT - 2;
+                    const isOverdueFlex =
+                      isToday &&
+                      !isTaskDoneForDay(task, day) &&
+                      endHour <= ctx.hour;
+                    return (
+                      <PlacedFlexBlock
+                        key={`${day}-${task.id}`}
+                        task={task}
+                        top={top}
+                        height={height}
+                        dayISO={day}
+                        compact
+                        isOverdue={isOverdueFlex}
+                        onOpen={() => onTaskClick(task.id)}
+                      />
+                    );
+                  });
+                })()}
 
                 {drag && drag.subIndex === idx && (
                   <div
@@ -1437,6 +1919,7 @@ function WeekViewAll({
               </div>
             );
           })}
+
         </div>
       </div>
     </div>

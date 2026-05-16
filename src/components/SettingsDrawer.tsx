@@ -1,9 +1,10 @@
 "use client";
 
 import { useFafoStore } from "@/lib/store";
-import type { Weekday } from "@/lib/types";
-import { useEffect, useState } from "react";
+import type { Task, Weekday } from "@/lib/types";
+import { useEffect, useMemo, useState } from "react";
 import { Avatar } from "./Avatar";
+import clsx from "clsx";
 
 const WEEKDAY_SHORT = ["D", "L", "M", "X", "J", "V", "S"];
 
@@ -347,6 +348,9 @@ function RutinasTab({ initialEditId }: { initialEditId?: string }) {
           {editingId ? "Guardar cambios" : "Agregar rutina"}
         </button>
       </div>
+
+      {/* Tareas dentro de esta rutina — solo en modo edicion */}
+      {editingId && <RoutineTasksEditor routineId={editingId} />}
       <div className="space-y-2">
         {routines.map((r) => {
           const isEditing = r.id === editingId;
@@ -412,6 +416,228 @@ function RutinasTab({ initialEditId }: { initialEditId?: string }) {
         })}
       </div>
     </div>
+  );
+}
+
+function RoutineTasksEditor({ routineId }: { routineId: string }) {
+  const tasks = useFafoStore((s) => s.tasks);
+  const addTask = useFafoStore((s) => s.addTask);
+  const updateTask = useFafoStore((s) => s.updateTask);
+  const deleteTask = useFafoStore((s) => s.deleteTask);
+  const reorderTask = useFafoStore((s) => s.reorderTask);
+  const routines = useFafoStore((s) => s.routines);
+  const routine = routines.find((r) => r.id === routineId);
+
+  const [newName, setNewName] = useState("");
+  const [newRecurring, setNewRecurring] = useState(false);
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [dragOverId, setDragOverId] = useState<string | null>(null);
+
+  const routineTasks = useMemo(
+    () => tasks.filter((t) => t.routineId === routineId),
+    [tasks, routineId]
+  );
+
+  function quickAdd(e: React.FormEvent) {
+    e.preventDefault();
+    const name = newName.trim();
+    if (!name || !routine) return;
+    addTask({
+      name,
+      priority: 2,
+      weekdays: routine.weekdays,
+      startHour: routine.startHour,
+      endHour: routine.endHour,
+      personId: routine.personId,
+      routineId,
+      flexible: true,
+      recurringInRoutine: newRecurring,
+    });
+    setNewName("");
+  }
+
+  return (
+    <div className="rounded-lg border border-fafo-border p-3 bg-fafo-bg space-y-2">
+      <div className="text-[10px] uppercase tracking-wider text-fafo-muted font-semibold flex items-center justify-between">
+        <span>Tareas en esta rutina ({routineTasks.length})</span>
+      </div>
+
+      <form onSubmit={quickAdd} className="flex flex-col gap-1.5">
+        <div className="flex items-center gap-2">
+          <span
+            className={clsx(
+              "w-5 h-5 rounded-full border-2 flex items-center justify-center text-sm",
+              newName.trim()
+                ? "border-fafo-accent text-fafo-accent"
+                : "border-fafo-muted/60 text-fafo-muted/60"
+            )}
+          >
+            +
+          </span>
+          <input
+            type="text"
+            value={newName}
+            onChange={(e) => setNewName(e.target.value)}
+            placeholder="Nueva tarea en esta rutina"
+            className="flex-1 bg-fafo-bg border border-fafo-border rounded-md px-2 py-1.5 text-sm outline-none focus:border-fafo-accent"
+          />
+          {newName.trim() && (
+            <button
+              type="submit"
+              className="text-xs px-2 py-1.5 rounded bg-fafo-accent text-white font-semibold"
+            >
+              +
+            </button>
+          )}
+        </div>
+        <label className="flex items-center gap-2 text-[10px] text-fafo-muted cursor-pointer pl-7">
+          <input
+            type="checkbox"
+            checked={newRecurring}
+            onChange={(e) => setNewRecurring(e.target.checked)}
+            className="accent-fafo-accent w-3 h-3"
+          />
+          <span className={newRecurring ? "text-fafo-text font-semibold" : ""}>
+            Repetitiva (se rehace cada iteracion)
+          </span>
+        </label>
+      </form>
+
+      {routineTasks.length === 0 ? (
+        <div className="text-[10px] text-fafo-muted/60 italic py-2 text-center">
+          Sin tareas todavia. Agregá una arriba.
+        </div>
+      ) : (
+        <ul className="space-y-1">
+          {routineTasks.map((t) => (
+            <RoutineTaskRow
+              key={t.id}
+              task={t}
+              isDragging={draggingId === t.id}
+              isDragOver={dragOverId === t.id && draggingId !== t.id}
+              onUpdate={(patch) => updateTask(t.id, patch)}
+              onDelete={() => {
+                if (confirm(`Eliminar "${t.name}"?`)) deleteTask(t.id);
+              }}
+              onUnlink={() =>
+                updateTask(t.id, { routineId: undefined })
+              }
+              onDragStart={() => setDraggingId(t.id)}
+              onDragOver={() => setDragOverId(t.id)}
+              onDrop={(srcId) => {
+                if (srcId && srcId !== t.id) reorderTask(srcId, t.id);
+                setDraggingId(null);
+                setDragOverId(null);
+              }}
+              onDragEnd={() => {
+                setDraggingId(null);
+                setDragOverId(null);
+              }}
+            />
+          ))}
+        </ul>
+      )}
+      <div className="text-[10px] text-fafo-muted/70 leading-relaxed">
+        <strong>Repetitiva</strong>: se rehace cada vez que aparece la rutina
+        (habit). <strong>Unica</strong>: una vez marcada hecha, queda hecha
+        para siempre.
+      </div>
+    </div>
+  );
+}
+
+function RoutineTaskRow({
+  task,
+  isDragging,
+  isDragOver,
+  onUpdate,
+  onDelete,
+  onUnlink,
+  onDragStart,
+  onDragOver,
+  onDrop,
+  onDragEnd,
+}: {
+  task: Task;
+  isDragging: boolean;
+  isDragOver: boolean;
+  onUpdate: (patch: Partial<Task>) => void;
+  onDelete: () => void;
+  onUnlink: () => void;
+  onDragStart: () => void;
+  onDragOver: () => void;
+  onDrop: (srcId: string) => void;
+  onDragEnd: () => void;
+}) {
+  return (
+    <li
+      draggable
+      onDragStart={(e) => {
+        e.dataTransfer.setData("text/task-id", task.id);
+        e.dataTransfer.effectAllowed = "move";
+        onDragStart();
+      }}
+      onDragOver={(e) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "move";
+        onDragOver();
+      }}
+      onDrop={(e) => {
+        e.preventDefault();
+        const srcId = e.dataTransfer.getData("text/task-id");
+        onDrop(srcId);
+      }}
+      onDragEnd={onDragEnd}
+      className={clsx(
+        "flex items-center gap-2 px-2 py-1.5 rounded-md border bg-fafo-panel/70 cursor-move transition-all",
+        isDragging && "opacity-30",
+        isDragOver
+          ? "border-fafo-accent ring-1 ring-fafo-accent"
+          : "border-fafo-border"
+      )}
+    >
+      <span className="text-fafo-muted/50 text-xs select-none">⋮⋮</span>
+      <span className="flex-1 text-sm text-fafo-text truncate">
+        {task.name}
+      </span>
+      <label
+        className="flex items-center gap-1 text-[9px] text-fafo-muted cursor-pointer select-none"
+        title="Repetitiva (rehacer cada iteracion)"
+      >
+        <input
+          type="checkbox"
+          checked={!!task.recurringInRoutine}
+          onChange={(e) =>
+            onUpdate({ recurringInRoutine: e.target.checked })
+          }
+          className="accent-fafo-accent w-3 h-3"
+        />
+        <span
+          className={clsx(
+            "px-1 rounded uppercase tracking-wider",
+            task.recurringInRoutine
+              ? "bg-fafo-accent/15 text-fafo-accent font-bold"
+              : "text-fafo-muted"
+          )}
+        >
+          {task.recurringInRoutine ? "Repet" : "Unica"}
+        </span>
+      </label>
+      <button
+        onClick={onUnlink}
+        className="text-[9px] text-fafo-muted hover:text-fafo-text px-1"
+        title="Sacar de esta rutina (queda huerfana)"
+      >
+        ↗
+      </button>
+      <button
+        onClick={onDelete}
+        className="text-[9px] text-fafo-muted hover:text-fafo-accent px-1"
+        title="Eliminar tarea"
+      >
+        ×
+      </button>
+    </li>
   );
 }
 

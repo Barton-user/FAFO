@@ -4,7 +4,8 @@ import { useFafoStore } from "@/lib/store";
 import { useResolvedContext } from "@/lib/context";
 import { Avatar } from "./Avatar";
 import { useMemo } from "react";
-import type { ViewMode } from "@/lib/types";
+import type { ViewMode, Weekday } from "@/lib/types";
+import { isTaskDoneForDay } from "@/lib/taskState";
 import {
   addDays,
   addMonths,
@@ -19,9 +20,11 @@ interface Props {
   viewMode: ViewMode;
   selectedDate: string;
   viewingPersonId: string | null;
+  todoOpen: boolean;
   onChangeViewMode: (m: ViewMode) => void;
   onChangeDate: (iso: string) => void;
   onChangeViewingPerson: (personId: string | null) => void;
+  onToggleTodo: () => void;
   onOpenSettings: () => void;
 }
 
@@ -35,9 +38,11 @@ export function StatusBar({
   viewMode,
   selectedDate,
   viewingPersonId,
+  todoOpen,
   onChangeViewMode,
   onChangeDate,
   onChangeViewingPerson,
+  onToggleTodo,
   onOpenSettings,
 }: Props) {
   const ctx = useResolvedContext();
@@ -59,6 +64,7 @@ export function StatusBar({
       : selfPerson;
 
   const tasks = useFafoStore((s) => s.tasks);
+  const routines = useFafoStore((s) => s.routines);
   const dailyGoal = useFafoStore((s) => s.dailyGoal);
 
   const { todayDone, hitGoal } = useMemo(() => {
@@ -70,6 +76,65 @@ export function StatusBar({
     ).length;
     return { todayDone, hitGoal: todayDone >= dailyGoal };
   }, [tasks, dailyGoal]);
+
+  // Status del dia: total / hechas / vencidas — para mostrar "como vas trasando"
+  const dayStatus = useMemo(() => {
+    const today = todayISO();
+    const weekday = ctx.now.getDay() as Weekday;
+    const nowHour = ctx.hour;
+    const ownerFilter = (id: string | undefined) => {
+      if (isAll) return true;
+      const owner = id ?? selfPerson?.id ?? "person-self";
+      const target = viewingPersonId ?? selfPerson?.id ?? "person-self";
+      return owner === target;
+    };
+    // Tareas que aplican hoy para la persona enfocada
+    const todayTasks = tasks.filter((t) => {
+      if (!ownerFilter(t.personId)) return false;
+      if (!t.weekdays.includes(weekday) && !t.isVital) return false;
+      if (
+        !t.isVital &&
+        t.locationId &&
+        t.locationId !== ctx.activeLocation?.id
+      )
+        return false;
+      return true;
+    });
+    let done = 0;
+    let overdue = 0;
+    for (const t of todayTasks) {
+      const isDone = isTaskDoneForDay(t, today);
+      if (isDone) {
+        done++;
+        continue;
+      }
+      // Calcular si esta vencida
+      if (t.flexible) {
+        if (t.routineId) {
+          const r = routines.find((x) => x.id === t.routineId);
+          if (r && r.endHour <= nowHour) overdue++;
+        }
+        // flex sin rutina: no contamos vencido (su posicion es arbitraria)
+      } else if (t.endHour <= nowHour) {
+        overdue++;
+      }
+    }
+    return {
+      total: todayTasks.length,
+      done,
+      overdue,
+      pending: todayTasks.length - done,
+    };
+  }, [
+    tasks,
+    routines,
+    ctx.now,
+    ctx.hour,
+    ctx.activeLocation,
+    isAll,
+    viewingPersonId,
+    selfPerson?.id,
+  ]);
 
   const timeStr = ctx.now.toLocaleTimeString([], {
     hour: "2-digit",
@@ -107,29 +172,70 @@ export function StatusBar({
 
         <div className="flex-1" />
 
-        {/* Productivity progress */}
-        <div className="hidden md:flex items-center gap-2 text-xs">
-          <span className="text-fafo-muted uppercase tracking-widest text-[9px]">
-            Hoy
-          </span>
-          <span
-            className={clsx(
-              "tabular-nums font-semibold",
-              hitGoal ? "text-fafo-accent2" : "text-fafo-text"
-            )}
-          >
-            {todayDone} / {dailyGoal}
-          </span>
-          <div className="w-28 h-1.5 bg-fafo-border rounded-full overflow-hidden">
-            <div
+        {/* Productivity progress + status del dia */}
+        <div className="hidden md:flex items-center gap-3 text-xs">
+          <div className="flex items-center gap-1.5">
+            <span className="text-fafo-muted uppercase tracking-widest text-[9px]">
+              Hoy
+            </span>
+            <span
               className={clsx(
-                "h-full transition-all duration-300",
-                hitGoal ? "bg-fafo-accent2" : "bg-gradient-to-r from-fafo-accent to-orange-400"
+                "tabular-nums font-semibold",
+                dayStatus.total > 0 && dayStatus.done === dayStatus.total
+                  ? "text-fafo-accent2"
+                  : "text-fafo-text"
               )}
+              title={`${dayStatus.done} hechas de ${dayStatus.total} tareas hoy`}
+            >
+              {dayStatus.done}/{dayStatus.total}
+            </span>
+            {dayStatus.overdue > 0 && (
+              <span
+                className="tabular-nums font-bold text-red-500"
+                title={`${dayStatus.overdue} vencidas`}
+              >
+                · {dayStatus.overdue}⚠
+              </span>
+            )}
+          </div>
+          {/* Barra dual: verde (done) + rojo (vencidas) + gris (pendientes ok) */}
+          <div className="w-32 h-1.5 bg-fafo-border rounded-full overflow-hidden flex">
+            <div
+              className="h-full bg-fafo-accent2 transition-all duration-300"
               style={{
-                width: `${Math.min(100, (todayDone / Math.max(1, dailyGoal)) * 100)}%`,
+                width: `${
+                  dayStatus.total > 0
+                    ? (dayStatus.done / dayStatus.total) * 100
+                    : 0
+                }%`,
               }}
+              title={`${dayStatus.done} hechas`}
             />
+            <div
+              className="h-full bg-red-400 transition-all duration-300"
+              style={{
+                width: `${
+                  dayStatus.total > 0
+                    ? (dayStatus.overdue / dayStatus.total) * 100
+                    : 0
+                }%`,
+              }}
+              title={`${dayStatus.overdue} vencidas`}
+            />
+          </div>
+          {/* Goal personal */}
+          <div className="flex items-center gap-1 opacity-70">
+            <span className="text-[9px] uppercase tracking-widest text-fafo-muted">
+              Goal
+            </span>
+            <span
+              className={clsx(
+                "tabular-nums text-[10px]",
+                hitGoal ? "text-fafo-accent2 font-bold" : "text-fafo-muted"
+              )}
+            >
+              {todayDone}/{dailyGoal}
+            </span>
           </div>
         </div>
 
@@ -160,6 +266,20 @@ export function StatusBar({
         </select>
 
         <Avatar compact />
+
+        <button
+          onClick={onToggleTodo}
+          className={clsx(
+            "w-8 h-8 rounded-md border transition-colors flex items-center justify-center text-sm",
+            todoOpen
+              ? "bg-fafo-accent2 text-white border-fafo-accent2"
+              : "border-fafo-border hover:border-fafo-accent text-fafo-text"
+          )}
+          title={todoOpen ? "Cerrar pendientes" : "Ver pendientes (To-Do)"}
+          aria-label="Toggle To-Do"
+        >
+          ☑
+        </button>
 
         <button
           onClick={toggleTheme}

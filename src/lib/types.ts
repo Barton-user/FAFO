@@ -57,6 +57,12 @@ export interface Task {
   completedAt?: number;
   // vital tasks (priority 0) bypass routines & geofences
   isVital?: boolean;
+  // tareas "sin horario": no se posicionan en la grilla de horas, viven en la
+  // banda superior (todo el dia / en orden, segun la rutina)
+  flexible?: boolean;
+  // Tareas adentro de una rutina que se REPITEN cada vez que la rutina aparece
+  // (habits). Si false (default), es una tarea unica: una vez hecha, queda hecha.
+  recurringInRoutine?: boolean;
 }
 
 export interface Person {
