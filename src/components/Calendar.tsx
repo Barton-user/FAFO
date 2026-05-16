@@ -984,7 +984,7 @@ function DayView({
 
   return (
     <div className="flex flex-1 overflow-hidden bg-fafo-bg">
-      <div className="w-16 shrink-0 border-r border-fafo-border bg-fafo-bg sticky left-0 z-10">
+      <div className="hidden md:block w-16 shrink-0 border-r border-fafo-border bg-fafo-bg sticky left-0 z-10">
         <div className="h-12 border-b border-fafo-border" />
         <div className="relative" style={{ height: TOTAL_HEIGHT }}>
           {Array.from({ length: HOUR_END - HOUR_START + 1 }, (_, i) => {
@@ -1069,7 +1069,7 @@ function DayView({
                 {Array.from({ length: HOUR_END - HOUR_START }, (_, i) => (
                   <div
                     key={i}
-                    className="absolute left-0 right-0 grid-hour"
+                    className="absolute left-0 right-0 grid-hour hidden md:block"
                     style={{ top: i * HOUR_HEIGHT, height: HOUR_HEIGHT }}
                   >
                     <div
@@ -1375,7 +1375,7 @@ function WeekView({
 
   return (
     <div className="flex flex-1 overflow-hidden bg-fafo-bg">
-      <div className="w-16 shrink-0 border-r border-fafo-border bg-fafo-bg sticky left-0 z-10">
+      <div className="hidden md:block w-16 shrink-0 border-r border-fafo-border bg-fafo-bg sticky left-0 z-10">
         <div className="h-14 border-b border-fafo-border flex flex-col items-center justify-center">
           {viewingPerson ? (
             <div
@@ -1479,7 +1479,7 @@ function WeekView({
                 {Array.from({ length: HOUR_END - HOUR_START }, (_, i) => (
                   <div
                     key={i}
-                    className="absolute left-0 right-0 grid-hour"
+                    className="absolute left-0 right-0 grid-hour hidden md:block"
                     style={{ top: i * HOUR_HEIGHT, height: HOUR_HEIGHT }}
                   >
                     <div
@@ -1708,7 +1708,7 @@ function WeekViewAll({
   return (
     <div className="flex flex-1 overflow-hidden bg-fafo-bg">
       {/* Time gutter */}
-      <div className="w-16 shrink-0 border-r border-fafo-border bg-fafo-bg sticky left-0 z-20">
+      <div className="hidden md:block w-16 shrink-0 border-r border-fafo-border bg-fafo-bg sticky left-0 z-20">
         <div className="h-14 border-b border-fafo-border flex flex-col items-center justify-center">
           <span className="text-sm">👥</span>
           <span className="text-[8px] uppercase tracking-wider text-fafo-accent2 font-semibold">
@@ -1853,7 +1853,7 @@ function WeekViewAll({
                 {Array.from({ length: HOUR_END - HOUR_START }, (_, i) => (
                   <div
                     key={i}
-                    className="absolute left-0 right-0 grid-hour"
+                    className="absolute left-0 right-0 grid-hour hidden md:block"
                     style={{ top: i * HOUR_HEIGHT, height: HOUR_HEIGHT }}
                   >
                     <div

@@ -32,7 +32,11 @@ function HomeInner() {
   const [settingsTab, setSettingsTab] = useState<SettingsTab | undefined>();
   const [editingRoutineId, setEditingRoutineId] = useState<string | undefined>();
 
-  const [viewMode, setViewMode] = useState<ViewMode>("week");
+  // Default: dia en mobile, semana en desktop
+  const [viewMode, setViewMode] = useState<ViewMode>(() => {
+    if (typeof window === "undefined") return "week";
+    return window.matchMedia("(max-width: 767px)").matches ? "day" : "week";
+  });
   const [selectedDate, setSelectedDate] = useState<string>(() => todayISO());
   const [viewingPersonId, setViewingPersonId] = useState<string | null>(null);
   const [todoOpen, setTodoOpen] = useState(false);
@@ -209,7 +213,7 @@ function ContextHint() {
 
 function FooterLegend({ viewMode }: { viewMode: ViewMode }) {
   return (
-    <div className="border-t border-fafo-border bg-fafo-panel/60 px-4 py-2 text-[10px] text-fafo-muted flex flex-wrap items-center gap-x-4 gap-y-1">
+    <div className="hidden md:flex border-t border-fafo-border bg-fafo-panel/60 px-4 py-2 text-[10px] text-fafo-muted flex-wrap items-center gap-x-4 gap-y-1">
       <span className="text-fafo-text font-semibold tracking-wider">TIP</span>
       {viewMode === "month" ? (
         <>
