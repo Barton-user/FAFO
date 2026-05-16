@@ -106,8 +106,8 @@ export function AuthGate({ children }: { children: ReactNode }) {
 }
 
 function LoginScreen() {
-  const { signIn, signUp } = useAuth();
-  const [mode, setMode] = useState<"login" | "signup">("login");
+  const { signIn, signUp, resetPassword } = useAuth();
+  const [mode, setMode] = useState<"login" | "signup" | "recover">("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -116,19 +116,29 @@ function LoginScreen() {
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    if (!email.trim() || !password) return;
+    if (!email.trim()) return;
+    if (mode !== "recover" && !password) return;
     setError(null);
     setInfo(null);
     setBusy(true);
     try {
-      const fn = mode === "login" ? signIn : signUp;
-      const { error } = await fn(email.trim(), password);
-      if (error) {
-        setError(error);
-      } else if (mode === "signup") {
-        setInfo(
-          "Cuenta creada. Si Supabase pide verificacion por email, revisa tu casilla."
-        );
+      if (mode === "recover") {
+        const { error } = await resetPassword(email.trim());
+        if (error) setError(error);
+        else
+          setInfo(
+            "Listo. Te mandamos un email con el link para resetear tu password. Revisa tu casilla (y la carpeta spam)."
+          );
+      } else {
+        const fn = mode === "login" ? signIn : signUp;
+        const { error } = await fn(email.trim(), password);
+        if (error) {
+          setError(error);
+        } else if (mode === "signup") {
+          setInfo(
+            "Cuenta creada. Si Supabase pide verificacion por email, revisa tu casilla."
+          );
+        }
       }
     } finally {
       setBusy(false);
@@ -159,7 +169,8 @@ function LoginScreen() {
               }}
               className={clsx(
                 "flex-1 text-xs py-1.5 rounded-md font-medium transition-all",
-                mode === m
+                (mode === m ||
+                  (mode === "recover" && m === "login"))
                   ? "bg-fafo-accent text-white shadow"
                   : "text-fafo-muted hover:text-fafo-text"
               )}
@@ -168,6 +179,12 @@ function LoginScreen() {
             </button>
           ))}
         </div>
+
+        {mode === "recover" && (
+          <div className="text-[11px] text-fafo-muted text-center">
+            Te mandamos un link por email para crear un password nuevo.
+          </div>
+        )}
 
         <form onSubmit={submit} className="space-y-3">
           <input
@@ -179,16 +196,20 @@ function LoginScreen() {
             required
             className="w-full bg-fafo-bg border border-fafo-border rounded-md px-3 py-2 text-sm outline-none focus:border-fafo-accent"
           />
-          <input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            placeholder="Password"
-            autoComplete={mode === "login" ? "current-password" : "new-password"}
-            required
-            minLength={6}
-            className="w-full bg-fafo-bg border border-fafo-border rounded-md px-3 py-2 text-sm outline-none focus:border-fafo-accent"
-          />
+          {mode !== "recover" && (
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="Password"
+              autoComplete={
+                mode === "login" ? "current-password" : "new-password"
+              }
+              required
+              minLength={6}
+              className="w-full bg-fafo-bg border border-fafo-border rounded-md px-3 py-2 text-sm outline-none focus:border-fafo-accent"
+            />
+          )}
           {error && (
             <div className="text-xs text-fafo-accent bg-fafo-accent/10 border border-fafo-accent/30 rounded-md px-3 py-2">
               {error}
@@ -201,15 +222,47 @@ function LoginScreen() {
           )}
           <button
             type="submit"
-            disabled={busy || !email.trim() || password.length < 6}
+            disabled={
+              busy ||
+              !email.trim() ||
+              (mode !== "recover" && password.length < 6)
+            }
             className="w-full bg-fafo-accent text-white text-sm py-2.5 rounded-md font-semibold disabled:opacity-40 disabled:cursor-not-allowed hover:brightness-110"
           >
             {busy
               ? "..."
               : mode === "login"
                 ? "Entrar"
-                : "Crear cuenta"}
+                : mode === "signup"
+                  ? "Crear cuenta"
+                  : "Enviar link de recuperacion"}
           </button>
+          {mode === "login" && (
+            <button
+              type="button"
+              onClick={() => {
+                setMode("recover");
+                setError(null);
+                setInfo(null);
+              }}
+              className="w-full text-[11px] text-fafo-muted hover:text-fafo-accent text-center"
+            >
+              Olvidaste tu password?
+            </button>
+          )}
+          {mode === "recover" && (
+            <button
+              type="button"
+              onClick={() => {
+                setMode("login");
+                setError(null);
+                setInfo(null);
+              }}
+              className="w-full text-[11px] text-fafo-muted hover:text-fafo-text text-center"
+            >
+              ← Volver al login
+            </button>
+          )}
         </form>
 
         <div className="text-[10px] text-fafo-muted text-center leading-relaxed">
