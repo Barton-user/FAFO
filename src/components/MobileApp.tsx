@@ -299,8 +299,12 @@ export function MobileApp() {
                       onOpen={() => setEditingId(t.id)}
                       onDragStart={() => setDraggingId(t.id)}
                       onDragOver={() => setDragOverId(t.id)}
-                      onDrop={(srcId) => {
-                        if (srcId && srcId !== t.id) reorderTask(srcId, t.id);
+                      onDrop={() => {
+                        // Usamos draggingId del state en vez de dataTransfer
+                        // porque en mobile (Chrome/Safari Android) dataTransfer
+                        // no se preserva confiablemente entre dragstart y drop.
+                        if (draggingId && draggingId !== t.id)
+                          reorderTask(draggingId, t.id);
                         setDraggingId(null);
                         setDragOverId(null);
                       }}
@@ -368,7 +372,7 @@ function MobileTaskRow({
   onOpen: () => void;
   onDragStart: () => void;
   onDragOver: () => void;
-  onDrop: (srcId: string) => void;
+  onDrop: () => void;
   onDragEnd: () => void;
 }) {
   const isDone = isTaskDoneForDay(task, todayISOStr);
@@ -393,8 +397,7 @@ function MobileTaskRow({
       }}
       onDrop={(e) => {
         e.preventDefault();
-        const srcId = e.dataTransfer.getData("text/task-id");
-        onDrop(srcId);
+        onDrop();
       }}
       onDragEnd={onDragEnd}
       onClick={onOpen}

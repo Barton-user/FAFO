@@ -13,11 +13,15 @@ para que otra persona se ponga al día rápido.
 - **Next.js 14** (App Router) + TypeScript
 - **TailwindCSS** con tema basado en CSS variables (RGB triplets para soportar
   opacidad de Tailwind) → habilita light/dark dinámico.
-- **Zustand** + `localStorage` persist (estado local).
-- **Supabase** configurado para auth + DB (backend SQL ya creado, **integración
-  cliente pendiente** — ver "Falta").
+- **Zustand** para estado en runtime. Persistencia primaria en **Supabase**
+  (RLS por user_id); `localStorage` queda como fallback de hidratación inicial
+  y como origen de la migración one-shot al primer login.
+- **Supabase** completamente integrado: Auth (email + password + reset por
+  link), DB con RLS, mutations sincronizadas en background (`bg()` wrapper +
+  `syncStore` para indicador de pending + toast de error).
 - **Geolocation API** + haversine para geofencing.
-- **HTML5 Drag & Drop** para reordenar tareas.
+- **HTML5 Drag & Drop** para reordenar tareas (incluye cross-day en TodoPanel).
+- **PWA básica** (manifest + standalone display, sin service worker todavía).
 - Deploy en **Vercel** (Git push → deploy automático).
 
 ---
@@ -27,41 +31,74 @@ para que otra persona se ponga al día rápido.
 ```
 src/
   app/
-    layout.tsx           Root + AuthProvider
-    page.tsx             Home — orquesta calendario, panel To-Do, modales
-    globals.css          Variables CSS (light + dark) + estilos base
+    layout.tsx                Root + AuthProvider
+    page.tsx                  Home — orquesta calendario, panel To-Do, modales
+                              (con switch automático a MobileApp en mobile)
+    globals.css               Variables CSS (light + dark) + estilos base
+    reset-password/page.tsx   Flow de "olvidé mi password" — landing del link
+                              de recuperación que manda Supabase por email
   components/
-    AuthGate.tsx         Login/signup con Supabase (email + password)
-    Avatar.tsx           Tiers gamificados (rookie → legend)
-    Calendar.tsx         Día / Semana / Semana+Todos / Mes
-                         Incluye TaskBlock, RoutineBlock, FlexibleChip,
-                         PlacedFlexBlock, WeekViewAll
-    Fab.tsx              Botón "+" flotante con menú (nueva tarea/rutina)
-    NotificationToaster  Toasts + Notification API
-    SettingsDrawer.tsx   Tabs: Resumen, Rutinas, Personas, Lugares, Ajustes
-                         Editor de rutinas con tareas internas + drag reorder
-    StatusBar.tsx        Header + view switcher + date nav + status del día
-                         (done/total + barra dual verde-rojo + goal)
-    TaskModal.tsx        Crear/editar tarea (con "sin horario fijo")
-    TodoPanel.tsx        Panel lateral derecho con flex tasks
-                         (quick-add con rutina, drag reorder, agrupado)
+    AuthGate.tsx              Login/signup/recover con Supabase; al login dispara
+                              migration (si aplica) + loadAll → hydrate del store
+    Avatar.tsx                Tiers gamificados (rookie → legend)
+    Calendar.tsx              Día / Semana / Semana+Todos / Mes
+                              Incluye TaskBlock, RoutineBlock, FlexibleChip,
+                              PlacedFlexBlock, WeekViewAll, DayView
+                              + helpers: computeFreeIntervals, distributeTasks
+                                (reparten flex tasks en huecos libres dentro
+                                de una rutina con tareas con horario adentro)
+    Fab.tsx                   Botón "+" flotante con menú (nueva tarea/rutina)
+    ManagementPanel.tsx       Pantalla de gestión (administración general)
+    MobileApp.tsx             Vista mobile minimalista tipo Microsoft To Do —
+                              "Mi día" agrupado por rutina + "Otras tareas"
+                              orphan, quick-add inline, FAB para nueva tarea
+    NotificationToaster.tsx   Toasts + Notification API + toasts de sync error
+    SearchModal.tsx           Modal de búsqueda global (Cmd+K) sobre tareas y
+                              rutinas
+    SettingsDrawer.tsx        Tabs: Resumen, Rutinas, Personas, Lugares, Ajustes
+                              Editor de rutinas con tareas internas + drag
+                              reorder + validación de horas/días + preview
+                              de cuándo aplica + contador de tareas por rutina
+    StatusBar.tsx             Header + view switcher + date nav + status del día
+                              (done/total + barra dual verde-rojo + goal +
+                              indicador de sync + métricas por mes/semana/año)
+    TaskModal.tsx             Crear/editar tarea (con "sin horario fijo",
+                              prioridad 0-5, duración)
+    TodoPanel.tsx             Panel lateral derecho con flex tasks
+                              (quick-add con rutina, drag reorder, cross-day
+                              drag, agrupado por día y rutina)
   lib/
-    auth.tsx             AuthContext + useAuth
-    context.ts           useResolvedContext (now + GPS → contexto)
-    dateUtils.ts         Helpers de fecha (ISO, semana, mes, formatos)
-    flexPlacement.ts     Auto-ubica flex tasks en huecos del día
-    geo.ts               Haversine + geofence resolver
-    seed.ts              Estado inicial demo
-    store.ts             Zustand store (tasks, routines, people, locations,
-                         settings, theme, dailyLogs, xp, streak)
-    supabase.ts          Cliente Supabase
-    taskState.ts         isTaskDoneForDay + toggleDonePatch (lógica de done
-                         por día para tareas repetitivas)
-    types.ts             Tipos del dominio
-    useGeolocation.ts    Hook GPS del navegador
-    useNow.ts            Tick periódico + flag de mount
+    api.ts                    CRUD tipado contra Supabase por entidad
+                              (people, locations, routines, tasks,
+                              user_settings, daily_logs) + loadAll()
+                              que devuelve snapshot completo
+    auth.tsx                  AuthContext + useAuth (signIn / signUp /
+                              signOut / resetPassword)
+    context.ts                useResolvedContext (now + GPS → contexto)
+    dateUtils.ts              Helpers de fecha (ISO, semana, mes, formatos)
+    flexPlacement.ts          Auto-ubica flex tasks en huecos del día (a nivel
+                              de timeline, fuera de rutinas)
+    geo.ts                    Haversine + geofence resolver
+    migration.ts              One-shot: detecta data en localStorage al primer
+                              login y la pushea a Supabase si el usuario remoto
+                              está vacío. Regenera IDs y remapea referencias.
+    seed.ts                   Estado inicial demo
+    store.ts                  Zustand store. Cada mutation espeja a Supabase
+                              vía bg() (track de pending + error en syncStore)
+    supabase.ts               Cliente Supabase + isSupabaseConfigured
+    syncStore.ts              Track de mutaciones en vuelo: pending count,
+                              lastSyncedAt, lastError → consumido por
+                              StatusBar (indicador) y NotificationToaster
+    taskState.ts              isTaskDoneForDay + toggleDonePatch (lógica de done
+                              por día para tareas repetitivas)
+    types.ts                  Tipos del dominio (Priority es 0-5)
+    useGeolocation.ts         Hook GPS del navegador
+    useNow.ts                 Tick periódico + flag de mount
+public/
+  manifest.json               PWA manifest (standalone display)
+  icon.svg                    Ícono PWA
 supabase/
-  schema.sql             SQL completo para crear tablas + RLS + bootstrap
+  schema.sql                  SQL completo para crear tablas + RLS + bootstrap
 ```
 
 ---
@@ -70,7 +107,7 @@ supabase/
 
 ### Task
 
-- `id, name, notes?, priority (0-3), done, completedAt?`
+- `id, name, notes?, priority (0-5), done, completedAt?, duration?`
 - **Tiempo**: `weekdays[], startHour, endHour` (días que aplica + horario).
 - **Contexto**: `routineId?, locationId?, personId?`
 - **Flags**: `isVital?` (priority 0, bypass rutinas/geofences),
@@ -82,6 +119,8 @@ supabase/
 - `id, name, color, weekdays[], startHour, endHour, locationId?, personId?`
 - Bloque visual de tiempo. Las tareas con `routineId` se anidan adentro
   visualmente (TaskBlock con inset si caen dentro, FlexibleChip si son flex).
+- Al crearla, el form defaultea a **todos los días** (`[0..6]`) — el usuario
+  destila los que no quiere.
 
 ### Person
 
@@ -107,13 +146,35 @@ supabase/
 - Geofencing por haversine con toggle GPS real ↔ mock.
 - Selector de ubicación + sin ubicación.
 
-### Vistas del calendario
+### Vistas del calendario (desktop / tablet)
 - **Día**: columnas por persona. La persona enfocada ocupa 90%, las demás 10%.
 - **Semana**: 7 días para la persona seleccionada.
 - **Semana + Todos** (`viewingPersonId = "__all__"`): cada día se subdivide
   en sub-columnas por persona.
-- **Mes**: grilla 6×7, tap día → vista Día.
+- **Mes**: grilla 6×7 con métricas por día, tap día → vista Día.
 - Selector "Viendo: [persona]" en el header, incluye opción "👥 Todos".
+- **Time gutter sticky**: la columna de horas queda fija a la izquierda
+  cuando scrolleás horizontalmente, pero acompaña el scroll vertical.
+- **Headers de día/persona sticky** (z-30) al scrollear vertical;
+  TaskBlock se eleva a z-40 cuando se está arrastrando para no quedar tapado.
+- **Auto-scroll**: la vista se centra automáticamente en la hora actual
+  al cargar.
+- Las rutinas con `locationId` se muestran igual en su día (no se filtran
+  por GPS); solo las tareas individuales con `locationId` se ocultan si
+  no estás en el geofence (consistente entre desktop y mobile).
+
+### Vista mobile ("Mi día" — `MobileApp.tsx`)
+- Layout minimalista estilo Microsoft To Do, una sola columna.
+- Tareas de hoy agrupadas por rutina, con la rutina como header (color
+  + horario), y al final una sección "Otras tareas" para las que no caen
+  en ninguna rutina activa hoy.
+- Quick-add inline arriba de todo + FAB rosa para tarea con horario.
+- Toggle done con check verde + tachado.
+- **Drag reorder de tareas**: usa `draggingId` del state local en vez de
+  `dataTransfer.getData()` — en Chrome/Safari Android `dataTransfer` no
+  se preserva confiablemente entre `dragstart` y `drop`, así que el ID
+  de origen se lee del state. Sin esto, el drop en mobile no aplica.
+- Settings drawer compartido con desktop.
 
 ### Tareas con horario (TaskBlock)
 - Drag para mover (snap a 15 min).
@@ -122,6 +183,7 @@ supabase/
 - Doble click en zona vacía → crea tarea de 1h.
 - Anidado automático en rutinas (si los horarios caen adentro al 50%+).
 - **Estado visual**: verde si done, rojo si vencida (endHour < ahora).
+- Chips compactos en mobile (responsive sizing tipo To Do).
 
 ### Rutinas (RoutineBlock)
 - Click en chip de nombre → editar.
@@ -132,27 +194,38 @@ supabase/
 - Selector de persona en el form.
 - Editor de tareas dentro de la rutina con quick-add + drag reorder + toggle
   "Repetitiva / Única".
+- Validación: días no vacíos + horas coherentes; preview "esta rutina aplica
+  ‹días› a ‹horas› en ‹ubicación›" para evitar crearla mal.
+- Contador "tareas/total" visible en la lista de rutinas.
+- En la vista de PC, los tintes mobile se aplican por rutina.
 
 ### Tareas flexibles (sin horario)
 - Checkbox "Sin horario fijo" en el modal.
-- **Con routineId**: aparecen como chips dentro del bloque de la rutina,
-  draggables para reordenar, con shadow, color verde si done, rojo si la
-  rutina venció.
+- **Con routineId**: aparecen como chips dentro del bloque de la rutina.
+  Si la rutina tiene también tareas con horario adentro, las flex se
+  reparten en los huecos libres entre ellas (no se apilan arriba/abajo).
+  Computado con `computeFreeIntervals` + `distributeTasks` en `Calendar.tsx`.
 - **Sin routineId**: auto-ubicadas en los huecos libres del día (timeline),
   pintadas con borde punteado para diferenciar.
 - **Repetitivas (`recurringInRoutine`)**: se reevalúan por día.
   `isTaskDoneForDay` mira si `completedAt` cae en ese día.
 
-### Panel To-Do (toggleable ☑)
+### Panel To-Do (toggleable ☑) — desktop
 - Quick-add con selector de rutina (hereda los weekdays de la rutina).
 - Drag reorder.
+- **Cross-day drag**: mover una tarea de un día a otro arrastrándola entre
+  columnas del panel.
 - Agrupado por rutina dentro de cada día.
 - Checkbox + tachado para hechas. Sección "Hechas" al final.
 - En vista Semana muestra todos los días con sus pendings.
 
+### Búsqueda global
+- `SearchModal` (Cmd+K) busca sobre nombres de tareas y rutinas.
+
 ### Gamificación
 - Avatar con 6 tiers (rookie → grinder → nerd → savant → super → legend).
-- XP por prioridad (vital=50, high=25, normal=12, low=5).
+- XP por prioridad: vital=50, urgente=35, importante=20, normal=12,
+  cuando-puedas=6, algún-día=3.
 - Streak diario (días consecutivos cumpliendo dailyGoal).
 - Toasts: te avisa cuando cumplís el goal o vas atrasado.
 
@@ -161,6 +234,8 @@ supabase/
 - "N⚠" rojo si hay vencidas.
 - Barra dual: verde (done) + rojo (overdue) + gris (pending).
 - Mini "Goal X/Y" → meta personal configurable.
+- **Indicador de sync**: puntito que parpadea cuando hay mutations en vuelo
+  hacia Supabase + toast si algo falla.
 
 ### UI
 - Paleta pastel cálida (cream + rosa + sage mint + dorado).
@@ -172,27 +247,45 @@ supabase/
 
 ### Auth (Supabase)
 - AuthProvider + useAuth hook.
-- AuthGate que envuelve la app: si no hay user, muestra login/signup.
-- Email + password (Supabase Auth default).
+- AuthGate envuelve la app: si no hay user → login/signup; si hay user →
+  corre migration one-shot (si aplica) + loadAll → hydrate.
+- Email + password.
+- **Reset password**: link "olvidé mi password" en el login manda email con
+  link; al hacer click se redirige a `/reset-password` y se detecta el evento
+  `PASSWORD_RECOVERY` de Supabase para mostrar el form de nueva password.
 - Schema SQL (`supabase/schema.sql`) crea: people, locations, routines,
   tasks, daily_logs, user_settings + triggers updated_at + RLS por user_id
   + bootstrap automático al signup (crea self person + settings).
+
+### Sincronización con Supabase
+- Cada mutation en `store.ts` espeja a Supabase vía `bg(label, fn)`:
+  trackea `pending` en `syncStore`, captura errores y los empuja al toaster.
+- `loadAll()` en `api.ts` arma un `RemoteSnapshot` con todas las entidades
+  del usuario; `store.hydrate(snap)` reemplaza el state local.
+- `migrateLocalToSupabaseIfEmpty(local)` corre al primer login: si remote
+  está vacío (excepto el self auto-creado por el trigger fafo_on_signup)
+  y local tiene data, regenera IDs y la sube. No corre si remote ya tiene
+  data del usuario.
+- **Refetch on focus**: `AuthGate` escucha `visibilitychange` y `focus`;
+  cuando la app vuelve a foreground (PWA en background → foreground,
+  o cambio de tab), vuelve a llamar `loadAll() → hydrate()`. Sin polling,
+  con un flag `inFlight` para no encolar requests. Cubre el caso cross-device
+  típico: editar en PC, abrir el celu → el celu se entera al volver a foco.
 
 ---
 
 ## Falta / Próximos pasos
 
-### Integración cliente Supabase
-La parte que **YA está** es: cliente configurado, AuthGate, schema en DB.
-**Falta**: reemplazar la persistencia del store (actualmente localStorage)
-por sync con Supabase. Plan:
+### Sincronización en tiempo real (Supabase Realtime)
+Hoy la sincro es write-through + refetch on focus (ver "Sincronización con
+Supabase" arriba). Cubre el 95% de los casos pero la propagación no es
+instantánea: si dejás dos devices abiertos simultáneamente, los cambios
+no se ven hasta que cambies de foco. Para upgrade:
 
-1. `src/lib/api.ts` con CRUD tipado por entidad.
-2. En `useFafoStore`: en lugar de `persist()`, cargar data desde Supabase
-   al login y enviar mutations a la DB.
-3. **Migración**: al primer login, detectar data en localStorage y
-   pushearla a Supabase (el usuario eligió "migrar automáticamente").
-4. Logout button en StatusBar.
+- **Supabase Realtime**: suscripción a `routines` / `tasks` / `people` /
+  `locations` para que el store se actualice vivo. UX "Google-Docs-like"
+  pero requiere manejo de conflictos (qué pasa si la mutation local y la
+  remota llegan en cualquier orden, qué con el `pending` del syncStore, etc).
 
 ### Notificaciones
 - Push notifications con service worker (para que lleguen incluso con el
@@ -205,15 +298,17 @@ por sync con Supabase. Plan:
 - Hitos sostenidos (7d / 30d / 90d) → recompensas.
 - **NUNCA membresías de por vida** (regla del proyecto).
 
-### Móvil
-- Wrapper PWA + background geolocation eficiente.
+### Mobile
+- Service worker para que la PWA funcione offline (hoy es manifest only).
+- Background geolocation eficiente.
 - Capacitor o React Native si se requiere notificaciones nativas.
 
 ### Mejoras UX pendientes
-- Drag tasks BETWEEN días (cross-day reorder) en el panel To-Do.
-- Pop-up para crear rutina directamente desde el calendario con drag.
+- Pop-up para crear rutina directamente desde el calendario con drag (hoy
+  el drag crea tareas, no rutinas).
 - Recompute "now indicator" cuando cambia el viewport (no solo cada 30s).
 - Vista mes con flex tasks visibles (actualmente solo muestra dots).
+- Botón de "ir a hoy" más visible en mobile.
 
 ### Performance
 - Memoizar más en Calendar.tsx — los `useMemo` deberían cubrir el caso pero
@@ -243,8 +338,9 @@ git add .
 git commit -m "lo que hiciste"
 git push
 
-# Conexión Supabase (cuando integremos)
-# .env.local ya tiene NEXT_PUBLIC_SUPABASE_URL y NEXT_PUBLIC_SUPABASE_ANON_KEY
+# Conexión Supabase: .env.local con NEXT_PUBLIC_SUPABASE_URL y
+# NEXT_PUBLIC_SUPABASE_ANON_KEY. La app muestra un mensaje claro si
+# isSupabaseConfigured es false.
 ```
 
 ---
@@ -252,15 +348,26 @@ git push
 ## Decisiones de diseño relevantes
 
 - **IDs como `text`** (no UUID): mantiene compatibilidad con los IDs
-  generados localmente (`Math.random()`). No hay que migrar.
+  generados localmente (`Math.random()`). La migración al primer login
+  regenera los IDs para evitar colisiones entre usuarios.
 - **RLS desde el día 0**: cada usuario solo ve su propia data.
-- **Online-only sync** (no offline-first): cuando se complete la integración
-  de Supabase, cada acción hace round-trip. Es más simple y suficiente para
-  este uso.
+- **Write-through online** (no offline-first): cada mutation local dispara
+  un round-trip a Supabase en background. El estado en runtime se mantiene
+  en Zustand para responsividad.
 - **TaskBlock vs RoutineBlock**: dos componentes con drag/resize porque su
   semántica difiere — la rutina arrastra a sus hijos, las tareas no.
-- **Flex tasks auto-placement**: el cálculo de huecos vive en
-  `lib/flexPlacement.ts` para mantener Calendar.tsx más simple.
+- **Flex tasks auto-placement**: dos casos distintos.
+  - Fuera de rutina: `lib/flexPlacement.ts` busca huecos en el timeline.
+  - Dentro de rutina con scheduled tasks: `computeFreeIntervals` +
+    `distributeTasks` (en `Calendar.tsx`) reparten los chips en los huecos
+    libres del bloque de rutina, proporcional a la altura de cada hueco.
 - **Theme via CSS vars (RGB triplets)**: necesario para que Tailwind soporte
   opacidad con clases dinámicas como `bg-fafo-panel/85` que se adaptan al
   tema activo.
+- **Filtro por `locationId` solo a nivel de tarea individual, no de rutina**:
+  las rutinas con ubicación atada se muestran igual en su día (vos planeás
+  con tu rutina aunque no estés en el lugar). Solo las tareas con su propio
+  `locationId` se ocultan fuera del geofence. PC y mobile consistentes.
+- **Default de weekdays al crear rutina**: todos los días (`[0..6]`). Antes
+  era L-V y sorprendía cuando uno creaba algo "para el finde" — el default
+  permisivo no excluye días sin que el usuario lo elija explícitamente.

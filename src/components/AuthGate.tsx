@@ -45,6 +45,41 @@ export function AuthGate({ children }: { children: ReactNode }) {
     };
   }, [user, hydrate]);
 
+  // Refetch automatico cuando la app vuelve a foco. Cubre el caso clasico
+  // de tener la PWA abierta en el celu, editar algo en la PC, y volver al
+  // celu — sin esto, el celu nunca se entera hasta un hard reload.
+  // Sin polling: solo dispara en visibilitychange (tab/PWA en background →
+  // foreground) y focus (cambio de ventana en desktop).
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+    let inFlight = false;
+    const refetch = async () => {
+      if (inFlight) return;
+      if (typeof document !== "undefined" && document.visibilityState !== "visible")
+        return;
+      inFlight = true;
+      try {
+        const snap = await loadAll();
+        if (!cancelled) hydrate(snap);
+      } catch (err) {
+        console.warn("[FAFO sync] refetch failed", err);
+      } finally {
+        inFlight = false;
+      }
+    };
+    const onVisible = () => {
+      if (document.visibilityState === "visible") refetch();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", refetch);
+    return () => {
+      cancelled = true;
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", refetch);
+    };
+  }, [user, hydrate]);
+
   if (!isSupabaseConfigured) {
     return (
       <main className="h-screen bg-fafo-bg text-fafo-text flex items-center justify-center p-6">
