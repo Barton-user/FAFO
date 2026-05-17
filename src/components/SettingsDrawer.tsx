@@ -163,7 +163,7 @@ function RutinasTab({ initialEditId }: { initialEditId?: string }) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [name, setName] = useState("");
   const [color, setColor] = useState("#90CDE0");
-  const [days, setDays] = useState<Weekday[]>([1, 2, 3, 4, 5]);
+  const [days, setDays] = useState<Weekday[]>([0, 1, 2, 3, 4, 5, 6]);
   const [startHour, setStartHour] = useState(9);
   const [endHour, setEndHour] = useState(17);
   const [allDay, setAllDay] = useState(false);
@@ -174,7 +174,7 @@ function RutinasTab({ initialEditId }: { initialEditId?: string }) {
     setEditingId(null);
     setName("");
     setColor("#90CDE0");
-    setDays([1, 2, 3, 4, 5]);
+    setDays([0, 1, 2, 3, 4, 5, 6]);
     setStartHour(9);
     setEndHour(17);
     setAllDay(false);
