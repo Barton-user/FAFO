@@ -491,11 +491,86 @@ interface RoutineBlockProps {
   height: number;
   compact?: boolean;
   flexTasks?: Task[];
+  /** Rangos verticales (px, relativos al top del bloque de rutina) ocupados por
+   * tareas con horario que estan dentro de esta rutina. Sirve para que las flex
+   * tasks no se posicionen "abajo" o "encima" de ellas. */
+  scheduledRanges?: Array<{ top: number; height: number }>;
   /** Si esta seteado, se usa como hora "ahora" para marcar las flex internas como vencidas
    * (typicamente ctx.hour si dayISO == today, sino null). */
   routineOverdueRef?: number | null;
   onEdit?: () => void;
   onFlexTaskOpen?: (taskId: string) => void;
+}
+
+/** Calcula los rangos verticales libres dentro del bloque de rutina, dados los
+ * rangos ocupados por tareas con horario. Devuelve intervalos en pixeles. */
+function computeFreeIntervals(
+  blockHeight: number,
+  headerPad: number,
+  footerPad: number,
+  occupied: Array<{ top: number; height: number }>
+): Array<{ top: number; height: number }> {
+  const usableEnd = Math.max(headerPad, blockHeight - footerPad);
+  const sorted = [...occupied]
+    .map((o) => ({
+      top: Math.max(headerPad, o.top),
+      bot: Math.min(usableEnd, o.top + o.height),
+    }))
+    .filter((o) => o.bot > o.top)
+    .sort((a, b) => a.top - b.top);
+  // Merge overlaps
+  const merged: Array<{ top: number; bot: number }> = [];
+  for (const r of sorted) {
+    const last = merged[merged.length - 1];
+    if (last && r.top <= last.bot) {
+      last.bot = Math.max(last.bot, r.bot);
+    } else {
+      merged.push({ ...r });
+    }
+  }
+  // Build free intervals as complement
+  const out: Array<{ top: number; height: number }> = [];
+  let cursor = headerPad;
+  for (const m of merged) {
+    if (m.top > cursor) out.push({ top: cursor, height: m.top - cursor });
+    cursor = Math.max(cursor, m.bot);
+  }
+  if (cursor < usableEnd) out.push({ top: cursor, height: usableEnd - cursor });
+  // Filtrar intervalos demasiado chicos para mostrar al menos una pildora
+  return out.filter((iv) => iv.height >= 28);
+}
+
+/** Reparte `tasks` entre `intervals` proporcionalmente a la altura de cada
+ * intervalo. Mantiene el orden original. */
+function distributeTasks<T>(
+  tasks: T[],
+  intervals: Array<{ height: number }>
+): T[][] {
+  if (intervals.length === 0) return [];
+  if (intervals.length === 1 || tasks.length === 0)
+    return [tasks, ...intervals.slice(1).map(() => [] as T[])];
+  const totalH = intervals.reduce((s, iv) => s + iv.height, 0);
+  const raw = intervals.map((iv) => (iv.height / totalH) * tasks.length);
+  const counts = raw.map((n) => Math.floor(n));
+  let assigned = counts.reduce((s, n) => s + n, 0);
+  // Distribuir el resto al intervalo con mayor parte fraccionaria
+  const rem = raw.map((n, i) => ({ i, frac: n - Math.floor(n) }));
+  rem.sort((a, b) => b.frac - a.frac);
+  let k = 0;
+  while (assigned < tasks.length) {
+    counts[rem[k % rem.length].i]++;
+    assigned++;
+    k++;
+  }
+  const out: T[][] = intervals.map(() => []);
+  let cursor = 0;
+  for (let i = 0; i < intervals.length; i++) {
+    for (let j = 0; j < counts[i] && cursor < tasks.length; j++) {
+      out[i].push(tasks[cursor++]);
+    }
+  }
+  while (cursor < tasks.length) out[out.length - 1].push(tasks[cursor++]);
+  return out;
 }
 
 function RoutineBlock({
@@ -504,6 +579,7 @@ function RoutineBlock({
   height,
   compact,
   flexTasks,
+  scheduledRanges,
   routineOverdueRef,
   onEdit,
   onFlexTaskOpen,
@@ -683,12 +759,35 @@ function RoutineBlock({
         <div className="absolute left-1/2 -translate-x-1/2 bottom-0.5 w-8 h-0.5 rounded-full bg-transparent group-hover/bot:bg-fafo-text/60 transition-colors" />
       </div>
 
-      {/* Lista de flex tasks dentro de la rutina */}
-      {flexTasks && flexTasks.length > 0 && (
-        <div
-          className="absolute left-2 right-2 top-9 bottom-2 flex flex-col gap-1.5 pointer-events-none overflow-y-auto md:left-1.5 md:right-7 md:gap-1"
-        >
-          {flexTasks.map((t) => {
+      {/* Lista de flex tasks dentro de la rutina.
+       * Si la rutina tiene tareas con horario adentro, las flex se reparten
+       * entre los huecos libres (arriba/abajo de las tareas con horario) en
+       * vez de quedar debajo de ellas. */}
+      {flexTasks && flexTasks.length > 0 && (() => {
+        const intervals = computeFreeIntervals(
+          displayHeight,
+          36, // header pad (espacio del chip del nombre)
+          8, // footer pad
+          scheduledRanges ?? []
+        );
+        // Fallback: si todo el bloque esta tapado por tareas con horario,
+        // igual mostramos al menos una zona (el bloque entero) para no perder
+        // los chips.
+        const safeIntervals =
+          intervals.length === 0
+            ? [{ top: 36, height: Math.max(0, displayHeight - 36 - 8) }]
+            : intervals;
+        const buckets = distributeTasks(flexTasks, safeIntervals);
+        return safeIntervals.map((iv, idx) => {
+          const bucket = buckets[idx] ?? [];
+          if (bucket.length === 0) return null;
+          return (
+            <div
+              key={`iv-${idx}`}
+              className="absolute left-2 right-2 flex flex-col gap-1.5 pointer-events-none overflow-y-auto md:left-1.5 md:right-7 md:gap-1"
+              style={{ top: iv.top, height: iv.height }}
+            >
+              {bucket.map((t) => {
             const isDone = !!t.done;
             const isOverdue =
               !isDone && routineOverdueRef && routine.endHour <= routineOverdueRef;
@@ -794,9 +893,11 @@ function RoutineBlock({
                 </span>
               </button>
             );
-          })}
-        </div>
-      )}
+              })}
+            </div>
+          );
+        });
+      })()}
 
       {/* Live label while dragging */}
       {drag && (
@@ -989,9 +1090,10 @@ function DayView({
       : null;
 
   return (
-    <div className="flex flex-1 overflow-hidden bg-fafo-bg">
-      <div className="hidden md:block w-16 shrink-0 border-r border-fafo-border bg-fafo-bg sticky left-0 z-10">
-        <div className="h-12 border-b border-fafo-border" />
+    <div ref={scrollRef} className="flex flex-1 overflow-auto bg-fafo-bg">
+      {/* Time gutter: sticky-left dentro del scroll, scrollea verticalmente con el contenido */}
+      <div className="hidden md:block w-16 shrink-0 border-r border-fafo-border bg-fafo-bg sticky left-0 z-30">
+        <div className="h-12 border-b border-fafo-border bg-fafo-bg sticky top-0 z-10" />
         <div className="relative" style={{ height: TOTAL_HEIGHT }}>
           {Array.from({ length: HOUR_END - HOUR_START + 1 }, (_, i) => {
             const h = HOUR_START + i;
@@ -1008,7 +1110,7 @@ function DayView({
         </div>
       </div>
 
-      <div ref={scrollRef} className="flex-1 overflow-x-auto overflow-y-auto">
+      <div className="flex-1 min-w-0">
         <div
           className="grid"
           style={{
@@ -1090,6 +1192,14 @@ function DayView({
                   const rh = (r.endHour - r.startHour) * HOUR_HEIGHT;
                   const flexInRoutine =
                     flexByRoutine.get(p.id)?.get(r.id) ?? [];
+                  // Rangos verticales ocupados por tareas con horario dentro
+                  // de la rutina, relativos al top del bloque de rutina.
+                  const scheduledInRoutine = ptasks
+                    .filter((t) => t.routineId === r.id && !t.flexible)
+                    .map((t) => ({
+                      top: (t.startHour - r.startHour) * HOUR_HEIGHT,
+                      height: (t.endHour - t.startHour) * HOUR_HEIGHT,
+                    }));
                   return (
                     <RoutineBlock
                       key={r.id}
@@ -1097,6 +1207,7 @@ function DayView({
                       top={rtop}
                       height={rh}
                       flexTasks={flexInRoutine}
+                      scheduledRanges={scheduledInRoutine}
                       routineOverdueRef={isToday ? ctx.hour : null}
                       onEdit={
                         onRoutineEdit ? () => onRoutineEdit(r.id) : undefined
@@ -1380,9 +1491,10 @@ function WeekView({
   }
 
   return (
-    <div className="flex flex-1 overflow-hidden bg-fafo-bg">
-      <div className="hidden md:block w-16 shrink-0 border-r border-fafo-border bg-fafo-bg sticky left-0 z-10">
-        <div className="h-14 border-b border-fafo-border flex flex-col items-center justify-center">
+    <div ref={scrollRef} className="flex flex-1 overflow-auto bg-fafo-bg">
+      {/* Time gutter: sticky-left dentro del scroll, scrollea verticalmente con el contenido */}
+      <div className="hidden md:block w-16 shrink-0 border-r border-fafo-border bg-fafo-bg sticky left-0 z-30">
+        <div className="h-14 border-b border-fafo-border flex flex-col items-center justify-center bg-fafo-bg sticky top-0 z-10">
           {viewingPerson ? (
             <div
               className="text-[10px] leading-none flex flex-col items-center gap-0.5"
@@ -1414,7 +1526,7 @@ function WeekView({
         </div>
       </div>
 
-      <div ref={scrollRef} className="flex-1 overflow-x-auto overflow-y-auto">
+      <div className="flex-1 min-w-0">
         <div
           className="grid"
           style={{ gridTemplateColumns: `repeat(7, minmax(140px, 1fr))` }}
@@ -1500,6 +1612,12 @@ function WeekView({
                   const rh = (r.endHour - r.startHour) * HOUR_HEIGHT;
                   const flexInRoutine =
                     flexByDayRoutine.get(d)?.get(r.id) ?? [];
+                  const scheduledInRoutine = dtasks
+                    .filter((t) => t.routineId === r.id && !t.flexible)
+                    .map((t) => ({
+                      top: (t.startHour - r.startHour) * HOUR_HEIGHT,
+                      height: (t.endHour - t.startHour) * HOUR_HEIGHT,
+                    }));
                   return (
                     <RoutineBlock
                       key={`${d}-${r.id}`}
@@ -1508,6 +1626,7 @@ function WeekView({
                       height={rh}
                       compact
                       flexTasks={flexInRoutine}
+                      scheduledRanges={scheduledInRoutine}
                       routineOverdueRef={d === today ? ctx.hour : null}
                       onEdit={
                         onRoutineEdit ? () => onRoutineEdit(r.id) : undefined
@@ -1712,16 +1831,16 @@ function WeekViewAll({
   );
 
   return (
-    <div className="flex flex-1 overflow-hidden bg-fafo-bg">
-      {/* Time gutter */}
-      <div className="hidden md:block w-16 shrink-0 border-r border-fafo-border bg-fafo-bg sticky left-0 z-20">
-        <div className="h-14 border-b border-fafo-border flex flex-col items-center justify-center">
+    <div ref={scrollRef} className="flex flex-1 overflow-auto bg-fafo-bg">
+      {/* Time gutter: sticky-left dentro del scroll, scrollea verticalmente con el contenido */}
+      <div className="hidden md:block w-16 shrink-0 border-r border-fafo-border bg-fafo-bg sticky left-0 z-30">
+        <div className="h-14 border-b border-fafo-border flex flex-col items-center justify-center bg-fafo-bg sticky top-0 z-10">
           <span className="text-sm">👥</span>
           <span className="text-[8px] uppercase tracking-wider text-fafo-accent2 font-semibold">
             Todos
           </span>
         </div>
-        <div className="h-6 border-b border-fafo-border" />
+        <div className="h-6 border-b border-fafo-border bg-fafo-bg sticky z-10" style={{ top: 56 }} />
         <div className="relative" style={{ height: TOTAL_HEIGHT }}>
           {Array.from({ length: HOUR_END - HOUR_START + 1 }, (_, i) => {
             const h = HOUR_START + i;
@@ -1738,7 +1857,7 @@ function WeekViewAll({
         </div>
       </div>
 
-      <div ref={scrollRef} className="flex-1 overflow-x-auto overflow-y-auto">
+      <div className="flex-1 min-w-0">
         {/* Sticky header con dia + sub-headers de personas */}
         <div className="sticky top-0 z-20 bg-fafo-panel/95 backdrop-blur">
           <div
@@ -1880,6 +1999,12 @@ function WeekViewAll({
                       return false;
                     return true;
                   });
+                  const scheduledInRoutine = ptasks
+                    .filter((t) => t.routineId === r.id && !t.flexible)
+                    .map((t) => ({
+                      top: (t.startHour - r.startHour) * HOUR_HEIGHT,
+                      height: (t.endHour - t.startHour) * HOUR_HEIGHT,
+                    }));
                   return (
                     <RoutineBlock
                       key={`${day}-${r.id}`}
@@ -1888,6 +2013,7 @@ function WeekViewAll({
                       height={rh}
                       compact
                       flexTasks={flexInRoutine}
+                      scheduledRanges={scheduledInRoutine}
                       routineOverdueRef={day === today ? ctx.hour : null}
                       onEdit={
                         onRoutineEdit ? () => onRoutineEdit(r.id) : undefined
