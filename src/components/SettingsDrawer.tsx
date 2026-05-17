@@ -202,14 +202,38 @@ function RutinasTab({ initialEditId }: { initialEditId?: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialEditId]);
 
+  // Validacion: las horas deben ser coherentes y los dias no vacios.
+  const effStart = allDay ? 0 : startHour;
+  const effEnd = allDay ? 24 : endHour;
+  const hoursInvalid = !allDay && effEnd <= effStart;
+  const daysInvalid = days.length === 0;
+  const canSave = name.trim().length > 0 && !hoursInvalid && !daysInvalid;
+
+  // Preview: que dias y horario va a aplicar la rutina (para que el usuario
+  // entienda por que no la ve en el calendario si elige dias/horas que no
+  // matchean con el dia visible).
+  const previewDays = days.length === 7
+    ? "todos los dias"
+    : days
+        .slice()
+        .sort()
+        .map((d) => WEEKDAY_SHORT[d])
+        .join(" ");
+  const previewHours = allDay
+    ? "todo el dia"
+    : `${Math.floor(effStart)}h-${Math.floor(effEnd)}h`;
+  const previewLocation = locId
+    ? locations.find((l) => l.id === locId)?.name ?? "ubicacion"
+    : "cualquier ubicacion";
+
   function save() {
-    if (!name.trim()) return;
+    if (!canSave) return;
     const payload = {
       name: name.trim(),
       color,
       weekdays: days,
-      startHour: allDay ? 0 : startHour,
-      endHour: allDay ? 24 : endHour,
+      startHour: effStart,
+      endHour: effEnd,
       locationId: locId,
       personId,
     };
@@ -341,10 +365,28 @@ function RutinasTab({ initialEditId }: { initialEditId?: string }) {
               </option>
             ))}
         </select>
+        {/* Cartel de error: horas o dias invalidos */}
+        {(hoursInvalid || daysInvalid) && name.trim().length > 0 && (
+          <div className="text-[11px] text-red-500 bg-red-500/10 border border-red-500/30 rounded px-2 py-1.5">
+            {daysInvalid && "Elegi al menos un dia. "}
+            {hoursInvalid &&
+              `La hora de fin (${Math.floor(effEnd)}h) debe ser mayor a la de inicio (${Math.floor(effStart)}h).`}
+          </div>
+        )}
+        {/* Preview de cuando va a aparecer la rutina */}
+        {canSave && (
+          <div className="text-[11px] text-fafo-muted bg-fafo-panel/60 border border-fafo-border/60 rounded px-2 py-1.5">
+            Aparecera: <span className="text-fafo-text font-semibold">{previewDays}</span>
+            {" · "}
+            <span className="text-fafo-text font-semibold">{previewHours}</span>
+            {" · "}
+            <span className="text-fafo-text">{previewLocation}</span>
+          </div>
+        )}
         <button
           onClick={save}
-          disabled={!name.trim()}
-          className="w-full bg-fafo-accent text-white text-xs py-2 rounded-md disabled:opacity-40"
+          disabled={!canSave}
+          className="w-full bg-fafo-accent text-white text-xs py-2 rounded-md disabled:opacity-40 disabled:cursor-not-allowed"
         >
           {editingId ? "Guardar cambios" : "Agregar rutina"}
         </button>
