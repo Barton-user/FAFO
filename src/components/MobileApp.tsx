@@ -75,15 +75,17 @@ export function MobileApp() {
     return result;
   }, [tasks, weekday, selfId, ctx.activeLocation]);
 
-  // Rutinas activas hoy (mismas reglas)
+  // Rutinas activas hoy. Solo filtramos por weekday y persona — NO por
+  // locationId, para mantener consistencia con la vista de PC
+  // (Calendar.tsx routinesByDay). El "plan del dia" se muestra siempre,
+  // aunque el GPS no matchee con un geofence guardado.
   const activeRoutines = useMemo(() => {
     return routines.filter((r) => {
       if (!r.weekdays.includes(weekday)) return false;
-      if (r.locationId && r.locationId !== ctx.activeLocation?.id) return false;
       const ownerId = r.personId ?? selfId;
       return ownerId === selfId;
     });
-  }, [routines, weekday, selfId, ctx.activeLocation]);
+  }, [routines, weekday, selfId]);
 
   // Agrupar: por rutina (ordenadas por startHour) + huerfanas al final
   const groups = useMemo(() => {
