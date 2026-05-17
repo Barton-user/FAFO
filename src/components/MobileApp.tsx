@@ -150,24 +150,31 @@ export function MobileApp() {
 
   return (
     <main className="min-h-screen bg-fafo-bg text-fafo-text flex flex-col pb-32">
-      {/* Top bar minimalista */}
-      <header className="sticky top-0 z-30 bg-fafo-bg/90 backdrop-blur px-3 py-3 flex items-center gap-2 border-b border-fafo-border/40">
+      {/* Top bar compacto: menu + fecha inline + theme */}
+      <header className="sticky top-0 z-30 bg-fafo-bg/90 backdrop-blur px-2 py-2 flex items-center gap-1 border-b border-fafo-border/40">
         <button
           onClick={() => {
             setSettingsTab(undefined);
             setSettingsOpen(true);
           }}
-          className="w-10 h-10 rounded-md flex items-center justify-center text-2xl text-fafo-text"
+          className="w-9 h-9 rounded-md flex items-center justify-center text-2xl text-fafo-text shrink-0"
           aria-label="Menu"
         >
           ☰
         </button>
-        <div className="flex-1 text-center">
-          <div className="text-fafo-accent font-black text-lg tracking-tighter">
-            FAFO
+        <div className="flex-1 min-w-0 leading-tight">
+          <div className="text-fafo-accent font-black text-base tracking-tighter">
+            Mi día
+          </div>
+          <div className="text-[10px] text-fafo-muted capitalize truncate">
+            {formatDateLong(today)}
+            {totalToday > 0 ? ` · ${doneToday}/${totalToday}` : ""}
+            {ctx.activeLocation
+              ? ` · ${ctx.activeLocation.emoji} ${ctx.activeLocation.name}`
+              : ""}
           </div>
         </div>
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-0.5 shrink-0">
           {syncPending > 0 && (
             <span
               title="sincronizando"
@@ -176,7 +183,7 @@ export function MobileApp() {
           )}
           <button
             onClick={toggleTheme}
-            className="w-10 h-10 rounded-md flex items-center justify-center text-base"
+            className="w-9 h-9 rounded-md flex items-center justify-center text-base"
             aria-label="Theme"
           >
             {theme === "dark" ? "☀️" : "🌙"}
@@ -184,28 +191,10 @@ export function MobileApp() {
         </div>
       </header>
 
-      {/* Titulo "Mi dia" */}
-      <div className="px-5 pt-6 pb-2">
-        <h1 className="text-fafo-accent font-black text-3xl tracking-tight">
-          Mi día
-        </h1>
-        <p className="text-fafo-accent/70 text-sm capitalize mt-0.5">
-          {formatDateLong(today)}
-        </p>
-        {totalToday > 0 && (
-          <p className="text-[11px] text-fafo-muted mt-1">
-            {doneToday}/{totalToday} hechas
-            {ctx.activeLocation
-              ? ` · en ${ctx.activeLocation.emoji} ${ctx.activeLocation.name}`
-              : ""}
-          </p>
-        )}
-      </div>
-
       {/* Quick add */}
       <form
         onSubmit={handleQuickAdd}
-        className="mx-4 mb-3 flex items-center gap-2 bg-fafo-panel border border-fafo-border rounded-xl shadow-sm px-3"
+        className="mx-3 mt-2 mb-2 flex items-center gap-2 bg-fafo-panel border border-fafo-border rounded-xl shadow-sm px-3"
       >
         <span
           className={clsx(
