@@ -377,11 +377,15 @@ export function xpForPriority(p: Priority): number {
     case 0:
       return 50; // vital
     case 1:
-      return 25;
+      return 35; // urgente
     case 2:
-      return 12;
+      return 20; // importante
     case 3:
-      return 5;
+      return 12; // normal
+    case 4:
+      return 6; // cuando puedas
+    case 5:
+      return 3; // algun dia
   }
 }
 

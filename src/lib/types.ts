@@ -4,11 +4,13 @@ export type ViewMode = "day" | "week" | "month";
 
 export type Theme = "light" | "dark";
 
-export type Priority = 0 | 1 | 2 | 3;
-// 0 = Vital (overrides everything, pulses)
-// 1 = High
-// 2 = Normal
-// 3 = Low
+export type Priority = 0 | 1 | 2 | 3 | 4 | 5;
+// 0 = Vital — supera todo, pulsa
+// 1 = Urgente
+// 2 = Importante
+// 3 = Normal
+// 4 = Cuando puedas
+// 5 = Algun dia
 
 export type Weekday = 0 | 1 | 2 | 3 | 4 | 5 | 6; // Sun..Sat
 

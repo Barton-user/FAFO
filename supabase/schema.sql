@@ -60,7 +60,7 @@ create table if not exists public.tasks (
   user_id                uuid          not null references auth.users(id) on delete cascade,
   name                   text          not null,
   notes                  text,
-  priority               smallint      not null default 2 check (priority between 0 and 3),
+  priority               smallint      not null default 2 check (priority between 0 and 5),
   done                   boolean       not null default false,
   weekdays               smallint[]    not null default '{}',
   start_hour             numeric(5,2)  not null default 9,
@@ -79,6 +79,19 @@ create table if not exists public.tasks (
 -- ALTER si la tabla ya existia sin la columna nueva
 alter table public.tasks
   add column if not exists recurring_in_routine boolean not null default false;
+
+-- Actualizar el CHECK constraint de priority para soportar 0-5
+do $$
+begin
+  if exists (
+    select 1 from pg_constraint
+    where conname = 'tasks_priority_check' and conrelid = 'public.tasks'::regclass
+  ) then
+    alter table public.tasks drop constraint tasks_priority_check;
+  end if;
+  alter table public.tasks
+    add constraint tasks_priority_check check (priority between 0 and 5);
+end $$;
 create index if not exists tasks_user_idx     on public.tasks(user_id);
 create index if not exists tasks_routine_idx  on public.tasks(routine_id);
 create index if not exists tasks_person_idx   on public.tasks(person_id);

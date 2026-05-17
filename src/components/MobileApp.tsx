@@ -17,9 +17,11 @@ import {
 
 const PRIORITY_DOT: Record<number, string> = {
   0: "bg-[#DD7493]",
-  1: "bg-[#E89E5C]",
-  2: "bg-[#5BACC4]",
-  3: "bg-[#9B8FBC]",
+  1: "bg-[#D88677]",
+  2: "bg-[#E89E5C]",
+  3: "bg-[#5BACC4]",
+  4: "bg-[#9B8FBC]",
+  5: "bg-[#8A847C]",
 };
 
 interface DragPayload {
@@ -236,16 +238,40 @@ export function MobileApp() {
           groups.map((g) => (
             <section
               key={g.key}
-              className="bg-fafo-panel border border-fafo-border rounded-2xl overflow-hidden shadow-sm"
+              className={clsx(
+                "border rounded-2xl overflow-hidden shadow-sm",
+                !g.routine && "bg-fafo-panel border-fafo-border"
+              )}
+              style={
+                g.routine
+                  ? {
+                      backgroundColor: `${g.routine.color}14`, // ~8% opacity
+                      borderColor: `${g.routine.color}40`,
+                    }
+                  : undefined
+              }
             >
-              <div className="px-4 py-2.5 flex items-center gap-2 bg-fafo-panel2/40">
+              <div
+                className="px-4 py-2.5 flex items-center gap-2"
+                style={{
+                  backgroundColor: g.routine
+                    ? `${g.routine.color}26` // ~15%
+                    : "rgb(var(--panel2) / 0.4)",
+                }}
+              >
                 <span
-                  className="w-1 h-5 rounded-full"
+                  className="w-1.5 h-5 rounded-full"
                   style={{ background: g.routine?.color ?? "#9B8FBC" }}
                 />
                 <span className="text-sm font-bold uppercase tracking-wider text-fafo-text">
                   {g.title}
                 </span>
+                {g.routine && (
+                  <span className="text-[9px] text-fafo-muted">
+                    {Math.floor(g.routine.startHour)}h–
+                    {Math.floor(g.routine.endHour)}h
+                  </span>
+                )}
                 <span className="ml-auto text-[10px] text-fafo-muted tabular-nums">
                   {g.tasks.filter((t) => isTaskDoneForDay(t, today)).length}/
                   {g.tasks.length}

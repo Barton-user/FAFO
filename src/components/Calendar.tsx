@@ -92,23 +92,29 @@ function findContainingRoutine(
 
 const PRIORITY_BG: Record<number, string> = {
   0: "bg-[#F4B5C3] text-[#5C2839]",
-  1: "bg-[#F5CBA0] text-[#5E3920]",
-  2: "bg-[#B8DBE8] text-[#22455E]",
-  3: "bg-[#CFC6E0] text-[#382F50]",
+  1: "bg-[#F4A695] text-[#5C2D22]",
+  2: "bg-[#F5CBA0] text-[#5E3920]",
+  3: "bg-[#B8DBE8] text-[#22455E]",
+  4: "bg-[#CFC6E0] text-[#382F50]",
+  5: "bg-[#D4CFC9] text-[#4A453F]",
 };
 
 const PRIORITY_DOT: Record<number, string> = {
   0: "bg-[#DD7493]",
-  1: "bg-[#E89E5C]",
-  2: "bg-[#5BACC4]",
-  3: "bg-[#9B8FBC]",
+  1: "bg-[#D88677]",
+  2: "bg-[#E89E5C]",
+  3: "bg-[#5BACC4]",
+  4: "bg-[#9B8FBC]",
+  5: "bg-[#8A847C]",
 };
 
 const PRIORITY_LABEL: Record<number, string> = {
   0: "VITAL",
-  1: "HIGH",
-  2: "NORMAL",
-  3: "LOW",
+  1: "URGENTE",
+  2: "IMPORTANTE",
+  3: "NORMAL",
+  4: "CUANDO PUEDAS",
+  5: "ALGUN DIA",
 };
 
 export function Calendar(props: Props) {

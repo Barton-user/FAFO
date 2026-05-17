@@ -5,10 +5,12 @@ import type { Priority, Weekday } from "@/lib/types";
 import { useEffect, useState } from "react";
 
 const PRIORITY_OPTIONS: { value: Priority; label: string; color: string }[] = [
-  { value: 0, label: "Vital", color: "bg-fafo-accent" },
-  { value: 1, label: "High", color: "bg-orange-500" },
-  { value: 2, label: "Normal", color: "bg-cyan-600" },
-  { value: 3, label: "Low", color: "bg-zinc-600" },
+  { value: 0, label: "Vital", color: "bg-[#DD7493]" },
+  { value: 1, label: "Urgente", color: "bg-[#D88677]" },
+  { value: 2, label: "Importante", color: "bg-[#E89E5C]" },
+  { value: 3, label: "Normal", color: "bg-[#5BACC4]" },
+  { value: 4, label: "Cuando puedas", color: "bg-[#9B8FBC]" },
+  { value: 5, label: "Algun dia", color: "bg-[#8A847C]" },
 ];
 
 const WEEKDAY_SHORT = ["D", "L", "M", "X", "J", "V", "S"];
@@ -157,23 +159,24 @@ export function TaskModal({
             className="w-full bg-fafo-bg border border-fafo-border rounded-md px-3 py-2.5 text-base outline-none focus:border-fafo-accent placeholder:text-fafo-muted"
           />
 
-          {/* Priority */}
+          {/* Priority — 6 niveles, 2 filas de 3 */}
           <div>
             <label className="text-[10px] uppercase tracking-wider text-fafo-muted">
               Prioridad
             </label>
-            <div className="flex gap-1.5 mt-1.5">
+            <div className="grid grid-cols-3 gap-1.5 mt-1.5">
               {PRIORITY_OPTIONS.map((p) => (
                 <button
                   key={p.value}
+                  type="button"
                   onClick={() => setPriority(p.value)}
-                  className={`flex-1 text-xs py-2 rounded-md transition-all ${
+                  className={`text-[11px] py-2 rounded-md transition-all ${
                     priority === p.value
-                      ? `${p.color} text-white shadow-md scale-[1.02]`
+                      ? `${p.color} text-white shadow-md scale-[1.02] font-semibold`
                       : "bg-fafo-bg text-fafo-muted hover:text-fafo-text border border-fafo-border"
                   }`}
                 >
-                  {p.label}
+                  P{p.value} · {p.label}
                 </button>
               ))}
             </div>
@@ -229,7 +232,7 @@ export function TaskModal({
 
           {/* Time */}
           {!flexible && (
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-3 gap-3">
               <div>
                 <label className="text-[10px] uppercase tracking-wider text-fafo-muted">
                   Desde
@@ -239,10 +242,38 @@ export function TaskModal({
                   value={hourToStr(startHour)}
                   onChange={(e) => {
                     const [h, m] = e.target.value.split(":").map(Number);
-                    setStartHour(h + m / 60);
+                    const dur = Math.max(0.25, endHour - startHour);
+                    const newStart = h + m / 60;
+                    setStartHour(newStart);
+                    setEndHour(Math.min(24, newStart + dur));
                   }}
                   className="w-full bg-fafo-bg border border-fafo-border rounded-md px-2 py-1.5 text-sm mt-1.5 outline-none focus:border-fafo-accent"
                 />
+              </div>
+              <div>
+                <label className="text-[10px] uppercase tracking-wider text-fafo-muted">
+                  Duracion
+                </label>
+                <select
+                  value={Math.max(0.25, endHour - startHour).toString()}
+                  onChange={(e) => {
+                    const dur = parseFloat(e.target.value);
+                    setEndHour(Math.min(24, startHour + dur));
+                  }}
+                  className="w-full bg-fafo-bg border border-fafo-border rounded-md px-2 py-1.5 text-sm mt-1.5 outline-none focus:border-fafo-accent"
+                >
+                  <option value="0.25">15 min</option>
+                  <option value="0.5">30 min</option>
+                  <option value="0.75">45 min</option>
+                  <option value="1">1 h</option>
+                  <option value="1.5">1.5 h</option>
+                  <option value="2">2 h</option>
+                  <option value="3">3 h</option>
+                  <option value="4">4 h</option>
+                  <option value="5">5 h</option>
+                  <option value="6">6 h</option>
+                  <option value="8">8 h</option>
+                </select>
               </div>
               <div>
                 <label className="text-[10px] uppercase tracking-wider text-fafo-muted">

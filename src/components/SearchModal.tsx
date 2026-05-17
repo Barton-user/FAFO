@@ -13,9 +13,11 @@ interface Props {
 
 const PRIORITY_DOT: Record<number, string> = {
   0: "bg-[#DD7493]",
-  1: "bg-[#E89E5C]",
-  2: "bg-[#5BACC4]",
-  3: "bg-[#9B8FBC]",
+  1: "bg-[#D88677]",
+  2: "bg-[#E89E5C]",
+  3: "bg-[#5BACC4]",
+  4: "bg-[#9B8FBC]",
+  5: "bg-[#8A847C]",
 };
 
 export function SearchModal({ open, onClose, onSelectTask }: Props) {
