@@ -421,7 +421,7 @@ function TaskBlock({
             : PRIORITY_BG[task.priority],
         isVital && !task.done && !isOverdue && "vital-task ring-2 ring-white/80",
         drag
-          ? "shadow-2xl ring-2 ring-fafo-text/40 z-30 cursor-grabbing scale-[1.02]"
+          ? "shadow-2xl ring-2 ring-fafo-text/40 z-40 cursor-grabbing scale-[1.02]"
           : "cursor-grab hover:shadow-xl transition-all z-20",
         nested && "border-l-[3px] border-fafo-text/30"
       )}
@@ -1129,7 +1129,7 @@ function DayView({
           {visiblePeople.map((p) => (
             <div
               key={`h-${p.id}`}
-              className="h-12 border-b border-r border-fafo-border flex items-center gap-2 px-3 sticky top-0 bg-fafo-panel/95 backdrop-blur z-20"
+              className="h-12 border-b border-r border-fafo-border flex items-center gap-2 px-3 sticky top-0 bg-fafo-panel/95 backdrop-blur z-30"
             >
               <div
                 className="w-7 h-7 rounded-full flex items-center justify-center text-base shadow-inner"
@@ -1540,7 +1540,7 @@ function WeekView({
                 key={`h-${d}`}
                 onClick={() => onSelectDate(d)}
                 className={clsx(
-                  "h-14 border-b border-r border-fafo-border flex flex-col items-center justify-center sticky top-0 bg-fafo-panel/95 backdrop-blur z-20 transition-colors hover:bg-fafo-panel",
+                  "h-14 border-b border-r border-fafo-border flex flex-col items-center justify-center sticky top-0 bg-fafo-panel/95 backdrop-blur z-30 transition-colors hover:bg-fafo-panel",
                   isSelected && "ring-1 ring-inset ring-fafo-accent/60"
                 )}
               >
@@ -1859,7 +1859,7 @@ function WeekViewAll({
 
       <div className="flex-1 min-w-0">
         {/* Sticky header con dia + sub-headers de personas */}
-        <div className="sticky top-0 z-20 bg-fafo-panel/95 backdrop-blur">
+        <div className="sticky top-0 z-30 bg-fafo-panel/95 backdrop-blur">
           <div
             className="grid border-b border-fafo-border"
             style={{ gridTemplateColumns: gridTemplate }}
