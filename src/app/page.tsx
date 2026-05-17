@@ -9,6 +9,7 @@ import { Fab } from "@/components/Fab";
 import { TodoPanel } from "@/components/TodoPanel";
 import { AuthGate } from "@/components/AuthGate";
 import { SearchModal } from "@/components/SearchModal";
+import { MobileApp } from "@/components/MobileApp";
 import { useFafoStore } from "@/lib/store";
 import { useResolvedContext } from "@/lib/context";
 import { useMounted } from "@/lib/useNow";
@@ -26,6 +27,17 @@ export default function Home() {
 
 function HomeInner() {
   const mounted = useMounted();
+  const [isMobile, setIsMobile] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const mq = window.matchMedia("(max-width: 767px)");
+    const onChange = (e: MediaQueryListEvent) => setIsMobile(e.matches);
+    setIsMobile(mq.matches);
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  }, []);
+
   const [draft, setDraft] = useState<DragPayload | null>(null);
   const [editing, setEditing] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -79,6 +91,11 @@ function HomeInner() {
         </div>
       </main>
     );
+  }
+
+  // En mobile: vista minimalista tipo Microsoft To Do
+  if (isMobile) {
+    return <MobileApp />;
   }
 
   const handleSelectDate = (iso: string) => {
