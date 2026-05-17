@@ -155,6 +155,7 @@ function RutinasTab({ initialEditId }: { initialEditId?: string }) {
   const routines = useFafoStore((s) => s.routines);
   const locations = useFafoStore((s) => s.locations);
   const people = useFafoStore((s) => s.people);
+  const tasks = useFafoStore((s) => s.tasks);
   const addRoutine = useFafoStore((s) => s.addRoutine);
   const updateRoutine = useFafoStore((s) => s.updateRoutine);
   const deleteRoutine = useFafoStore((s) => s.deleteRoutine);
@@ -371,6 +372,26 @@ function RutinasTab({ initialEditId }: { initialEditId?: string }) {
               <div className="flex-1 min-w-0">
                 <div className="text-sm font-medium truncate flex items-center gap-1.5">
                   {r.name}
+                  {(() => {
+                    const taskCount = tasks.filter(
+                      (t) => t.routineId === r.id
+                    ).length;
+                    const doneCount = tasks.filter(
+                      (t) => t.routineId === r.id && t.done
+                    ).length;
+                    return taskCount > 0 ? (
+                      <span
+                        className="text-[10px] bg-fafo-accent/15 text-fafo-accent font-semibold px-1.5 py-0.5 rounded tabular-nums"
+                        title={`${doneCount} hechas de ${taskCount} tareas`}
+                      >
+                        {doneCount}/{taskCount}
+                      </span>
+                    ) : (
+                      <span className="text-[10px] text-fafo-muted/60 italic">
+                        sin tareas
+                      </span>
+                    );
+                  })()}
                   {r.personId && (
                     <span className="text-[10px] bg-fafo-panel2 text-fafo-muted px-1.5 py-0.5 rounded">
                       {people.find((p) => p.id === r.personId)?.emoji}{" "}
