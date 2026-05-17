@@ -498,6 +498,10 @@ interface RoutineBlockProps {
   /** Si esta seteado, se usa como hora "ahora" para marcar las flex internas como vencidas
    * (typicamente ctx.hour si dayISO == today, sino null). */
   routineOverdueRef?: number | null;
+  /** ISO date del dia que renderiza este bloque. Necesario para soportar drag
+   * cross-day de chips: si soltas una tarea de otro dia en esta rutina, sus
+   * weekdays se reemplazan por el weekday de dayISO. */
+  dayISO?: string;
   onEdit?: () => void;
   onFlexTaskOpen?: (taskId: string) => void;
 }
@@ -581,6 +585,7 @@ function RoutineBlock({
   flexTasks,
   scheduledRanges,
   routineOverdueRef,
+  dayISO,
   onEdit,
   onFlexTaskOpen,
 }: RoutineBlockProps) {
@@ -589,10 +594,67 @@ function RoutineBlock({
   const deleteRoutine = useFafoStore((s) => s.deleteRoutine);
   const toggleTask = useFafoStore((s) => s.toggleTask);
   const reorderTask = useFafoStore((s) => s.reorderTask);
+  const updateTask = useFafoStore((s) => s.updateTask);
+  const tasks = useFafoStore((s) => s.tasks);
 
   // Estado de drag reorder de chips internos
   const [chipDraggingId, setChipDraggingId] = useState<string | null>(null);
   const [chipDragOverId, setChipDragOverId] = useState<string | null>(null);
+
+  // Estado para drop cross-rutina: cuando hay un drag de tarea activo
+  // EN CUALQUIER LADO del documento, activamos un drop zone que cubre el
+  // bloque de rutina para que se pueda soltar adentro. Usamos eventos
+  // globales de dragstart/dragend para no acoplar componentes.
+  const [anyTaskDragging, setAnyTaskDragging] = useState(false);
+  const [isDropTarget, setIsDropTarget] = useState(false);
+  useEffect(() => {
+    const onStart = (e: DragEvent) => {
+      if (e.dataTransfer?.types.includes("text/task-id")) {
+        setAnyTaskDragging(true);
+      }
+    };
+    const onEnd = () => {
+      setAnyTaskDragging(false);
+      setIsDropTarget(false);
+    };
+    document.addEventListener("dragstart", onStart);
+    document.addEventListener("dragend", onEnd);
+    document.addEventListener("drop", onEnd);
+    return () => {
+      document.removeEventListener("dragstart", onStart);
+      document.removeEventListener("dragend", onEnd);
+      document.removeEventListener("drop", onEnd);
+    };
+  }, []);
+
+  // Lanza la mutacion correspondiente cuando se suelta una tarea sobre
+  // este bloque (en area vacia) o sobre un chip de este bloque
+  // (cross-rutina o cross-day). Anchor opcional: si se solto sobre un
+  // chip especifico, lo usamos para reorder relativo a el.
+  const handleTaskDrop = (srcId: string, anchorTaskId?: string) => {
+    if (!srcId) return;
+    const srcTask = tasks.find((x) => x.id === srcId);
+    if (!srcTask) return;
+    const patch: Partial<Task> = {};
+    if (srcTask.routineId !== routine.id) {
+      patch.routineId = routine.id;
+    }
+    if (dayISO) {
+      const targetWeekday = parseISO(dayISO).getDay() as Weekday;
+      if (!srcTask.weekdays.includes(targetWeekday)) {
+        // Mismo patron que TodoPanel cross-day: replaza weekdays con el dia
+        // destino. Si la tarea era recurrente en varios dias, queda solo en
+        // el dia donde la soltaste.
+        patch.weekdays = [targetWeekday];
+      }
+    }
+    if (Object.keys(patch).length > 0) {
+      updateTask(srcId, patch);
+    }
+    if (anchorTaskId && anchorTaskId !== srcId) {
+      reorderTask(srcId, anchorTaskId);
+    }
+  };
 
   const didMoveRef = useRef(false);
   const [drag, setDrag] = useState<{
@@ -692,8 +754,41 @@ function RoutineBlock({
 
   return (
     <div
-      className="absolute left-1 right-1 rounded-lg pointer-events-none group/r z-0"
+      className={clsx(
+        "absolute left-1 right-1 rounded-lg group/r z-0 transition-shadow",
+        // Cuando hay un drag de tarea activo, volvemos el bloque pointer-events-auto
+        // asi onDrop puede dispararse en el (incluyendo en areas vacias y en
+        // el background fill). Cuando no hay drag, el bloque sigue siendo
+        // transparente a clicks/dblclicks para que el day column de atras
+        // reciba "doble click crea tarea" en el area vacia de la rutina.
+        anyTaskDragging ? "pointer-events-auto" : "pointer-events-none",
+        isDropTarget &&
+          anyTaskDragging &&
+          "ring-2 ring-fafo-accent ring-offset-1 ring-offset-fafo-bg shadow-lg"
+      )}
       style={{ top: displayTop, height: displayHeight }}
+      onDragOver={
+        anyTaskDragging
+          ? (e) => {
+              e.preventDefault();
+              e.dataTransfer.dropEffect = "move";
+              setIsDropTarget(true);
+            }
+          : undefined
+      }
+      onDragLeave={
+        anyTaskDragging ? () => setIsDropTarget(false) : undefined
+      }
+      onDrop={
+        anyTaskDragging
+          ? (e) => {
+              e.preventDefault();
+              const srcId = e.dataTransfer.getData("text/task-id");
+              handleTaskDrop(srcId);
+              setIsDropTarget(false);
+            }
+          : undefined
+      }
     >
       {/* Background fill + hatched overlay */}
       <div
@@ -814,7 +909,10 @@ function RoutineBlock({
                   e.preventDefault();
                   e.stopPropagation();
                   const srcId = e.dataTransfer.getData("text/task-id");
-                  if (srcId && srcId !== t.id) reorderTask(srcId, t.id);
+                  // handleTaskDrop cubre los 3 casos: misma rutina + mismo
+                  // dia (solo reorder), otra rutina (cambia routineId), y
+                  // cross-day (replaza weekdays).
+                  if (srcId && srcId !== t.id) handleTaskDrop(srcId, t.id);
                   setChipDraggingId(null);
                   setChipDragOverId(null);
                 }}
@@ -1209,6 +1307,7 @@ function DayView({
                       flexTasks={flexInRoutine}
                       scheduledRanges={scheduledInRoutine}
                       routineOverdueRef={isToday ? ctx.hour : null}
+                      dayISO={selectedDate}
                       onEdit={
                         onRoutineEdit ? () => onRoutineEdit(r.id) : undefined
                       }
@@ -1628,6 +1727,7 @@ function WeekView({
                       flexTasks={flexInRoutine}
                       scheduledRanges={scheduledInRoutine}
                       routineOverdueRef={d === today ? ctx.hour : null}
+                      dayISO={d}
                       onEdit={
                         onRoutineEdit ? () => onRoutineEdit(r.id) : undefined
                       }
@@ -2015,6 +2115,7 @@ function WeekViewAll({
                       flexTasks={flexInRoutine}
                       scheduledRanges={scheduledInRoutine}
                       routineOverdueRef={day === today ? ctx.hour : null}
+                      dayISO={day}
                       onEdit={
                         onRoutineEdit ? () => onRoutineEdit(r.id) : undefined
                       }

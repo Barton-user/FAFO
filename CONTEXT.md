@@ -209,6 +209,16 @@ supabase/
   pintadas con borde punteado para diferenciar.
 - **Repetitivas (`recurringInRoutine`)**: se reevalúan por día.
   `isTaskDoneForDay` mira si `completedAt` cae en ese día.
+- **Drag cross-rutina y cross-day** (calendario PC): arrastrar un chip
+  flex de una rutina y soltarlo sobre otra rutina (área vacía o sobre
+  un chip de esa rutina) cambia su `routineId`. Si la nueva rutina es
+  en otro día, también se replaza `weekdays` con el weekday del día
+  destino (mismo patrón que `TodoPanel`). Implementación:
+  `RoutineBlock.handleTaskDrop()` + drop zone en el wrapper que se
+  activa solo cuando hay un drag de tarea en curso (detectado vía
+  listeners globales `dragstart`/`dragend` con type `text/task-id`),
+  para no interferir con el "doble-click crea tarea" del day column
+  cuando no se está arrastrando.
 
 ### Panel To-Do (toggleable ☑) — desktop
 - Quick-add con selector de rutina (hereda los weekdays de la rutina).
