@@ -1210,13 +1210,23 @@ function DayView({
                   const rh = (r.endHour - r.startHour) * HOUR_HEIGHT;
                   const flexInRoutine =
                     flexByRoutine.get(p.id)?.get(r.id) ?? [];
-                  // Rangos verticales ocupados por tareas con horario dentro
-                  // de la rutina, relativos al top del bloque de rutina.
+                  // Rangos verticales ocupados por tareas con horario que
+                  // CAEN visualmente dentro de la rutina (overlap por horas),
+                  // sin importar si tienen routineId seteado o no. Asi los
+                  // chips flex nunca se solapan con una timed que se ve adentro.
                   const scheduledInRoutine = ptasks
-                    .filter((t) => t.routineId === r.id && !t.flexible)
+                    .filter(
+                      (t) =>
+                        !t.flexible &&
+                        t.endHour > r.startHour &&
+                        t.startHour < r.endHour
+                    )
                     .map((t) => ({
-                      top: (t.startHour - r.startHour) * HOUR_HEIGHT,
-                      height: (t.endHour - t.startHour) * HOUR_HEIGHT,
+                      top: (Math.max(t.startHour, r.startHour) - r.startHour) * HOUR_HEIGHT,
+                      height:
+                        (Math.min(t.endHour, r.endHour) -
+                          Math.max(t.startHour, r.startHour)) *
+                        HOUR_HEIGHT,
                     }));
                   return (
                     <RoutineBlock
@@ -1632,10 +1642,18 @@ function WeekView({
                   const flexInRoutine =
                     flexByDayRoutine.get(d)?.get(r.id) ?? [];
                   const scheduledInRoutine = dtasks
-                    .filter((t) => t.routineId === r.id && !t.flexible)
+                    .filter(
+                      (t) =>
+                        !t.flexible &&
+                        t.endHour > r.startHour &&
+                        t.startHour < r.endHour
+                    )
                     .map((t) => ({
-                      top: (t.startHour - r.startHour) * HOUR_HEIGHT,
-                      height: (t.endHour - t.startHour) * HOUR_HEIGHT,
+                      top: (Math.max(t.startHour, r.startHour) - r.startHour) * HOUR_HEIGHT,
+                      height:
+                        (Math.min(t.endHour, r.endHour) -
+                          Math.max(t.startHour, r.startHour)) *
+                        HOUR_HEIGHT,
                     }));
                   return (
                     <RoutineBlock
@@ -2020,10 +2038,18 @@ function WeekViewAll({
                     return true;
                   });
                   const scheduledInRoutine = ptasks
-                    .filter((t) => t.routineId === r.id && !t.flexible)
+                    .filter(
+                      (t) =>
+                        !t.flexible &&
+                        t.endHour > r.startHour &&
+                        t.startHour < r.endHour
+                    )
                     .map((t) => ({
-                      top: (t.startHour - r.startHour) * HOUR_HEIGHT,
-                      height: (t.endHour - t.startHour) * HOUR_HEIGHT,
+                      top: (Math.max(t.startHour, r.startHour) - r.startHour) * HOUR_HEIGHT,
+                      height:
+                        (Math.min(t.endHour, r.endHour) -
+                          Math.max(t.startHour, r.startHour)) *
+                        HOUR_HEIGHT,
                     }));
                   return (
                     <RoutineBlock
