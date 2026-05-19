@@ -30,6 +30,9 @@ export interface DragPayload {
   endHour: number;
   personId: string;
   weekday: Weekday;
+  /** Si la creacion ocurrio dentro del area visual de una rutina, dejamos
+   * pre-seleccionado el id de esa rutina en el modal. */
+  routineId?: string;
 }
 
 interface Props {
@@ -1226,15 +1229,18 @@ function DayView({
       const b = snapHour(Math.max(drag.startY, y));
       setDrag(null);
       if (b - a >= MIN_DURATION) {
+        const dragRoutines = routinesByPerson.get(drag.personId) ?? [];
+        const container = findContainingRoutine(dragRoutines, a, b);
         onDragComplete({
           startHour: a,
           endHour: b,
           personId: drag.personId,
           weekday,
+          routineId: container?.id,
         });
       }
     },
-    [drag, weekday, onDragComplete]
+    [drag, weekday, onDragComplete, routinesByPerson]
   );
 
   const nowMarkerY =
@@ -1319,11 +1325,17 @@ function DayView({
                   );
                   const startHour = snapHour(y);
                   const endHour = Math.min(HOUR_END, startHour + 1);
+                  const container = findContainingRoutine(
+                    proutines,
+                    startHour,
+                    endHour
+                  );
                   onDragComplete({
                     startHour,
                     endHour,
                     personId: p.id,
                     weekday,
+                    routineId: container?.id,
                   });
                 }}
               >
@@ -1648,15 +1660,18 @@ function WeekView({
       const weekday = parseISO(drag.dayISO).getDay() as Weekday;
       setDrag(null);
       if (b - a >= MIN_DURATION) {
+        const dragRoutines = routinesByDay.get(drag.dayISO) ?? [];
+        const container = findContainingRoutine(dragRoutines, a, b);
         onDragComplete({
           startHour: a,
           endHour: b,
           personId: selfId,
           weekday,
+          routineId: container?.id,
         });
       }
     },
-    [drag, onDragComplete, selfId]
+    [drag, onDragComplete, selfId, routinesByDay]
   );
 
   // Despues de todos los hooks: si estamos en modo Todos, delega al render con sub-columnas.
@@ -1768,11 +1783,17 @@ function WeekView({
                   const startHour = snapHour(y);
                   const endHour = Math.min(HOUR_END, startHour + 1);
                   const wd = parseISO(d).getDay() as Weekday;
+                  const container = findContainingRoutine(
+                    droutines,
+                    startHour,
+                    endHour
+                  );
                   onDragComplete({
                     startHour,
                     endHour,
                     personId: selfId,
                     weekday: wd,
+                    routineId: container?.id,
                   });
                 }}
               >
@@ -2026,15 +2047,21 @@ function WeekViewAll({
       const sc = subCols[idx];
       setDrag(null);
       if (sc && b - a >= MIN_DURATION) {
+        const colRoutines = routines.filter((r) => {
+          const owner = r.personId ?? selfDefaultId;
+          return owner === sc.person.id && r.weekdays.includes(sc.weekday);
+        });
+        const container = findContainingRoutine(colRoutines, a, b);
         onDragComplete({
           startHour: a,
           endHour: b,
           personId: sc.person.id,
           weekday: sc.weekday,
+          routineId: container?.id,
         });
       }
     },
-    [drag, subCols, onDragComplete]
+    [drag, subCols, onDragComplete, routines, selfDefaultId]
   );
 
   return (
@@ -2174,11 +2201,13 @@ function WeekViewAll({
                   );
                   const sh = snapHour(y);
                   const eh = Math.min(HOUR_END, sh + 1);
+                  const container = findContainingRoutine(proutines, sh, eh);
                   onDragComplete({
                     startHour: sh,
                     endHour: eh,
                     personId: person.id,
                     weekday,
+                    routineId: container?.id,
                   });
                 }}
               >

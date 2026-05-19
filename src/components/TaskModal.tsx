@@ -24,6 +24,8 @@ export interface TaskModalProps {
     endHour: number;
     personId: string;
     weekday: Weekday;
+    /** Rutina pre-seleccionada cuando se crea desde dentro de su area. */
+    routineId?: string;
   };
   // For editing existing
   editingTaskId?: string;
@@ -78,7 +80,7 @@ export function TaskModal({
     } else if (newDraft) {
       setName("");
       setPriority(2);
-      setRoutineId(undefined);
+      setRoutineId(newDraft.routineId);
       setLocationId(undefined);
       setWeekdays([newDraft.weekday]);
       setStartHour(newDraft.startHour);
