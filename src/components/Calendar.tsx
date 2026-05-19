@@ -426,7 +426,7 @@ function TaskBlock({
         nested && "border-l-[3px] border-fafo-text/30"
       )}
       style={{ top: displayTop, height: displayHeight }}
-      title="Arrastra para mover · borde para redimensionar · doble click: marcar hecha"
+      title="Click checkbox: marcar hecha · arrastra para mover · borde para redimensionar"
     >
       {!compact && (
         <div className="flex items-center gap-1.5 pointer-events-none">
@@ -451,14 +451,40 @@ function TaskBlock({
           )}
         </div>
       )}
-      <div className="font-semibold truncate leading-tight pointer-events-none flex items-center gap-1">
-        {compact && nested && <span className="opacity-70">↳</span>}
+      <div className="font-semibold truncate leading-tight flex items-center gap-1.5">
+        {/* Checkbox para marcar hecha. Stop propagation en pointerDown para
+         * que no se inicie el drag del bloque entero. */}
+        <span
+          role="checkbox"
+          aria-checked={task.done}
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.stopPropagation();
+            toggleTask(task.id);
+          }}
+          className={clsx(
+            "rounded-full border-2 flex items-center justify-center shrink-0 cursor-pointer transition-colors",
+            compact ? "w-4 h-4 text-[10px]" : "w-5 h-5 text-xs",
+            task.done
+              ? "bg-fafo-accent2 border-fafo-accent2 text-white"
+              : "border-current/50 hover:bg-white/30"
+          )}
+          title={task.done ? "Marcar pendiente" : "Marcar hecha"}
+        >
+          {task.done && <span className="leading-none">✓</span>}
+        </span>
+        {compact && nested && (
+          <span className="opacity-70 pointer-events-none">↳</span>
+        )}
         {compact && owner && (
-          <span className="text-[10px] leading-none" title={owner.name}>
+          <span
+            className="text-[10px] leading-none pointer-events-none"
+            title={owner.name}
+          >
             {owner.emoji}
           </span>
         )}
-        <span className="truncate">{task.name}</span>
+        <span className="truncate pointer-events-none">{task.name}</span>
       </div>
 
       {drag && (
