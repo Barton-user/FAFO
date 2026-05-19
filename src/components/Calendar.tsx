@@ -506,77 +506,6 @@ interface RoutineBlockProps {
   onFlexTaskOpen?: (taskId: string) => void;
 }
 
-/** Calcula los rangos verticales libres dentro del bloque de rutina, dados los
- * rangos ocupados por tareas con horario. Devuelve intervalos en pixeles. */
-function computeFreeIntervals(
-  blockHeight: number,
-  headerPad: number,
-  footerPad: number,
-  occupied: Array<{ top: number; height: number }>
-): Array<{ top: number; height: number }> {
-  const usableEnd = Math.max(headerPad, blockHeight - footerPad);
-  const sorted = [...occupied]
-    .map((o) => ({
-      top: Math.max(headerPad, o.top),
-      bot: Math.min(usableEnd, o.top + o.height),
-    }))
-    .filter((o) => o.bot > o.top)
-    .sort((a, b) => a.top - b.top);
-  // Merge overlaps
-  const merged: Array<{ top: number; bot: number }> = [];
-  for (const r of sorted) {
-    const last = merged[merged.length - 1];
-    if (last && r.top <= last.bot) {
-      last.bot = Math.max(last.bot, r.bot);
-    } else {
-      merged.push({ ...r });
-    }
-  }
-  // Build free intervals as complement
-  const out: Array<{ top: number; height: number }> = [];
-  let cursor = headerPad;
-  for (const m of merged) {
-    if (m.top > cursor) out.push({ top: cursor, height: m.top - cursor });
-    cursor = Math.max(cursor, m.bot);
-  }
-  if (cursor < usableEnd) out.push({ top: cursor, height: usableEnd - cursor });
-  // Filtrar intervalos demasiado chicos para mostrar al menos una pildora
-  return out.filter((iv) => iv.height >= 28);
-}
-
-/** Reparte `tasks` entre `intervals` proporcionalmente a la altura de cada
- * intervalo. Mantiene el orden original. */
-function distributeTasks<T>(
-  tasks: T[],
-  intervals: Array<{ height: number }>
-): T[][] {
-  if (intervals.length === 0) return [];
-  if (intervals.length === 1 || tasks.length === 0)
-    return [tasks, ...intervals.slice(1).map(() => [] as T[])];
-  const totalH = intervals.reduce((s, iv) => s + iv.height, 0);
-  const raw = intervals.map((iv) => (iv.height / totalH) * tasks.length);
-  const counts = raw.map((n) => Math.floor(n));
-  let assigned = counts.reduce((s, n) => s + n, 0);
-  // Distribuir el resto al intervalo con mayor parte fraccionaria
-  const rem = raw.map((n, i) => ({ i, frac: n - Math.floor(n) }));
-  rem.sort((a, b) => b.frac - a.frac);
-  let k = 0;
-  while (assigned < tasks.length) {
-    counts[rem[k % rem.length].i]++;
-    assigned++;
-    k++;
-  }
-  const out: T[][] = intervals.map(() => []);
-  let cursor = 0;
-  for (let i = 0; i < intervals.length; i++) {
-    for (let j = 0; j < counts[i] && cursor < tasks.length; j++) {
-      out[i].push(tasks[cursor++]);
-    }
-  }
-  while (cursor < tasks.length) out[out.length - 1].push(tasks[cursor++]);
-  return out;
-}
-
 function RoutineBlock({
   routine,
   top,
@@ -855,34 +784,26 @@ function RoutineBlock({
       </div>
 
       {/* Lista de flex tasks dentro de la rutina.
-       * Si la rutina tiene tareas con horario adentro, las flex se reparten
-       * entre los huecos libres (arriba/abajo de las tareas con horario) en
-       * vez de quedar debajo de ellas. */}
+       * Las flex SIEMPRE van debajo de la ultima tarea con horario de la rutina,
+       * apiladas verticalmente. Nunca se solapan con las timed: si no entran,
+       * el contenedor scrollea internamente. */}
       {flexTasks && flexTasks.length > 0 && (() => {
-        const intervals = computeFreeIntervals(
-          displayHeight,
-          36, // header pad (espacio del chip del nombre)
-          8, // footer pad
-          scheduledRanges ?? []
+        const HEADER_PAD = 36; // espacio del chip del nombre
+        const FOOTER_PAD = 8;
+        // Bottom (px desde el top del bloque) de la tarea con horario mas baja.
+        // Si no hay timed adentro, arrancamos justo debajo del header.
+        const scheduledBottom = (scheduledRanges ?? []).reduce(
+          (max, r) => Math.max(max, r.top + r.height),
+          HEADER_PAD
         );
-        // Fallback: si todo el bloque esta tapado por tareas con horario,
-        // igual mostramos al menos una zona (el bloque entero) para no perder
-        // los chips.
-        const safeIntervals =
-          intervals.length === 0
-            ? [{ top: 36, height: Math.max(0, displayHeight - 36 - 8) }]
-            : intervals;
-        const buckets = distributeTasks(flexTasks, safeIntervals);
-        return safeIntervals.map((iv, idx) => {
-          const bucket = buckets[idx] ?? [];
-          if (bucket.length === 0) return null;
-          return (
-            <div
-              key={`iv-${idx}`}
-              className="absolute left-2 right-2 flex flex-col gap-1.5 pointer-events-none overflow-y-auto md:left-1.5 md:right-7 md:gap-1"
-              style={{ top: iv.top, height: iv.height }}
-            >
-              {bucket.map((t) => {
+        const chipsTop = Math.max(HEADER_PAD, scheduledBottom + 4);
+        const chipsHeight = Math.max(0, displayHeight - chipsTop - FOOTER_PAD);
+        return (
+          <div
+            className="absolute left-2 right-2 flex flex-col gap-1.5 pointer-events-none overflow-y-auto md:left-1.5 md:right-7 md:gap-1"
+            style={{ top: chipsTop, height: chipsHeight }}
+          >
+            {flexTasks.map((t) => {
             const isDone = !!t.done;
             const isOverdue =
               !isDone && routineOverdueRef && routine.endHour <= routineOverdueRef;
@@ -991,10 +912,9 @@ function RoutineBlock({
                 </span>
               </button>
             );
-              })}
-            </div>
-          );
-        });
+            })}
+          </div>
+        );
       })()}
 
       {/* Live label while dragging */}
