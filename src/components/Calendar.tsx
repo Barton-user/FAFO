@@ -533,7 +533,6 @@ function RoutineBlock({
   const updateRoutine = useFafoStore((s) => s.updateRoutine);
   const shiftRoutine = useFafoStore((s) => s.shiftRoutine);
   const deleteRoutine = useFafoStore((s) => s.deleteRoutine);
-  const toggleTask = useFafoStore((s) => s.toggleTask);
   const reorderTask = useFafoStore((s) => s.reorderTask);
   const moveTaskAfter = useFafoStore((s) => s.moveTaskAfter);
   const updateTask = useFafoStore((s) => s.updateTask);
@@ -840,7 +839,7 @@ function RoutineBlock({
           : [...(flexBefore ?? []), ...(flexAfter ?? [])];
 
         const renderChip = (t: Task) => {
-          const isDone = !!t.done;
+          const isDone = isTaskDoneForDay(t, dayISO ?? todayISO());
           const isOverdue =
             !isDone && routineOverdueRef && routine.endHour <= routineOverdueRef;
           const isDragging = chipDraggingId === t.id;
@@ -879,7 +878,7 @@ function RoutineBlock({
               onPointerDown={(e) => e.stopPropagation()}
               onDoubleClick={(e) => {
                 e.stopPropagation();
-                toggleTask(t.id);
+                updateTask(t.id, toggleDonePatch(t, dayISO ?? todayISO()));
               }}
               onClick={(e) => {
                 e.stopPropagation();
@@ -905,7 +904,7 @@ function RoutineBlock({
               <span
                 onClick={(e) => {
                   e.stopPropagation();
-                  toggleTask(t.id);
+                  updateTask(t.id, toggleDonePatch(t, dayISO ?? todayISO()));
                 }}
                 className={clsx(
                   "rounded-full border-2 flex items-center justify-center shrink-0 cursor-pointer",
