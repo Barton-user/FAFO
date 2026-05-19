@@ -40,6 +40,7 @@ interface Actions {
   toggleTask: (id: string) => void;
   deleteTask: (id: string) => void;
   reorderTask: (srcId: string, targetId: string) => void;
+  moveTaskAfter: (srcId: string, targetId: string) => void;
   // routines
   addRoutine: (r: Omit<Routine, "id" | "createdAt">) => Routine;
   updateRoutine: (id: string, patch: Partial<Routine>) => void;
@@ -136,6 +137,26 @@ export const useFafoStore = create<AppState & Actions>()(
           return { tasks };
         });
         bg("reorderTask", () =>
+          api.reorderTasksApi(get().tasks.map((t) => t.id))
+        );
+      },
+
+      moveTaskAfter: (srcId, targetId) => {
+        set((s) => {
+          if (srcId === targetId) return s;
+          const tasks = [...s.tasks];
+          const srcIdx = tasks.findIndex((t) => t.id === srcId);
+          if (srcIdx === -1) return s;
+          const [moved] = tasks.splice(srcIdx, 1);
+          const newTargetIdx = tasks.findIndex((t) => t.id === targetId);
+          if (newTargetIdx === -1) {
+            tasks.push(moved);
+          } else {
+            tasks.splice(newTargetIdx + 1, 0, moved);
+          }
+          return { tasks };
+        });
+        bg("moveTaskAfter", () =>
           api.reorderTasksApi(get().tasks.map((t) => t.id))
         );
       },

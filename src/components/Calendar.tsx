@@ -490,7 +490,16 @@ interface RoutineBlockProps {
   top: number;
   height: number;
   compact?: boolean;
-  flexTasks?: Task[];
+  /** Chips flex que el usuario quiere ANTES (arriba) del bloque de timed. */
+  flexBefore?: Task[];
+  /** Chips flex que el usuario quiere DESPUES (abajo) del bloque de timed. */
+  flexAfter?: Task[];
+  /** Id de la primera tarea con horario de la rutina (en orden de array).
+   * Lo usamos como anchor cuando se suelta un chip en la zona "before". */
+  firstTimedId?: string;
+  /** Id de la ultima tarea con horario de la rutina (en orden de array).
+   * Anchor para la zona "after". */
+  lastTimedId?: string;
   /** Rangos verticales (px, relativos al top del bloque de rutina) ocupados por
    * tareas con horario que estan dentro de esta rutina. Sirve para que las flex
    * tasks no se posicionen "abajo" o "encima" de ellas. */
@@ -511,7 +520,10 @@ function RoutineBlock({
   top,
   height,
   compact,
-  flexTasks,
+  flexBefore,
+  flexAfter,
+  firstTimedId,
+  lastTimedId,
   scheduledRanges,
   routineOverdueRef,
   dayISO,
@@ -523,12 +535,16 @@ function RoutineBlock({
   const deleteRoutine = useFafoStore((s) => s.deleteRoutine);
   const toggleTask = useFafoStore((s) => s.toggleTask);
   const reorderTask = useFafoStore((s) => s.reorderTask);
+  const moveTaskAfter = useFafoStore((s) => s.moveTaskAfter);
   const updateTask = useFafoStore((s) => s.updateTask);
   const tasks = useFafoStore((s) => s.tasks);
 
   // Estado de drag reorder de chips internos
   const [chipDraggingId, setChipDraggingId] = useState<string | null>(null);
   const [chipDragOverId, setChipDragOverId] = useState<string | null>(null);
+  // Hover en una de las zonas vacias (arriba/abajo del bloque de timed),
+  // para drop "mover a este lado".
+  const [zoneHover, setZoneHover] = useState<"before" | "after" | null>(null);
 
   // Estado para drop cross-rutina: cuando hay un drag de tarea activo
   // EN CUALQUIER LADO del documento, activamos un drop zone que cubre el
@@ -783,137 +799,231 @@ function RoutineBlock({
         <div className="absolute left-1/2 -translate-x-1/2 bottom-0.5 w-8 h-0.5 rounded-full bg-transparent group-hover/bot:bg-fafo-text/60 transition-colors" />
       </div>
 
-      {/* Lista de flex tasks dentro de la rutina.
-       * Las flex SIEMPRE van debajo de la ultima tarea con horario de la rutina,
-       * apiladas verticalmente. Nunca se solapan con las timed: si no entran,
-       * el contenedor scrollea internamente. */}
-      {flexTasks && flexTasks.length > 0 && (() => {
+      {/* Dos zonas de flex chips dentro de la rutina:
+       * - "before": arriba del bloque de timed (entre el header y la primera timed)
+       * - "after":  abajo del bloque de timed (entre la ultima timed y el footer)
+       * Las timed mantienen su posicion por hora. El usuario puede arrastrar
+       * un chip de una zona a la otra para elegir el lado. */}
+      {(() => {
         const HEADER_PAD = 36; // espacio del chip del nombre
         const FOOTER_PAD = 8;
-        // Bottom (px desde el top del bloque) de la tarea con horario mas baja.
-        // Si no hay timed adentro, arrancamos justo debajo del header.
-        const scheduledBottom = (scheduledRanges ?? []).reduce(
-          (max, r) => Math.max(max, r.top + r.height),
-          HEADER_PAD
-        );
-        const chipsTop = Math.max(HEADER_PAD, scheduledBottom + 4);
-        const chipsHeight = Math.max(0, displayHeight - chipsTop - FOOTER_PAD);
-        return (
-          <div
-            className="absolute left-2 right-2 flex flex-col gap-1.5 pointer-events-none overflow-y-auto md:left-1.5 md:right-7 md:gap-1"
-            style={{ top: chipsTop, height: chipsHeight }}
-          >
-            {flexTasks.map((t) => {
-            const isDone = !!t.done;
-            const isOverdue =
-              !isDone && routineOverdueRef && routine.endHour <= routineOverdueRef;
-            const isDragging = chipDraggingId === t.id;
-            const isDragOver =
-              chipDragOverId === t.id && chipDraggingId !== t.id;
-            return (
-              <button
-                key={t.id}
-                draggable
-                onDragStart={(e) => {
-                  e.stopPropagation();
-                  e.dataTransfer.setData("text/task-id", t.id);
-                  e.dataTransfer.effectAllowed = "move";
-                  setChipDraggingId(t.id);
-                }}
-                onDragOver={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  e.dataTransfer.dropEffect = "move";
-                  setChipDragOverId(t.id);
-                }}
-                onDrop={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  const srcId = e.dataTransfer.getData("text/task-id");
-                  // handleTaskDrop cubre los 3 casos: misma rutina + mismo
-                  // dia (solo reorder), otra rutina (cambia routineId), y
-                  // cross-day (replaza weekdays).
-                  if (srcId && srcId !== t.id) handleTaskDrop(srcId, t.id);
-                  setChipDraggingId(null);
-                  setChipDragOverId(null);
-                }}
-                onDragEnd={() => {
-                  setChipDraggingId(null);
-                  setChipDragOverId(null);
-                }}
-                onPointerDown={(e) => e.stopPropagation()}
-                onDoubleClick={(e) => {
+        const ranges = scheduledRanges ?? [];
+        const scheduledTop = ranges.length
+          ? ranges.reduce((min, r) => Math.min(min, r.top), Infinity)
+          : null;
+        const scheduledBottom = ranges.length
+          ? ranges.reduce((max, r) => Math.max(max, r.top + r.height), 0)
+          : null;
+
+        const hasTimed = ranges.length > 0;
+
+        // Bounds zona "before" (arriba del bloque de timed). Solo existe si
+        // hay timed; si no hay, esta zona se colapsa.
+        const beforeTop = HEADER_PAD;
+        const beforeBottomLimit = hasTimed
+          ? (scheduledTop ?? HEADER_PAD) - 4
+          : HEADER_PAD; // colapsa a 0 cuando no hay timed
+        const beforeHeight = Math.max(0, beforeBottomLimit - beforeTop);
+
+        // Bounds zona "after" (abajo del bloque de timed). Si NO hay timed,
+        // esta zona ocupa todo el bloque util.
+        const afterTop = hasTimed
+          ? (scheduledBottom ?? HEADER_PAD) + 4
+          : HEADER_PAD;
+        const afterHeight = Math.max(0, displayHeight - afterTop - FOOTER_PAD);
+
+        // Cuando NO hay timed, ponemos todos los chips en la zona "after"
+        // (que en ese caso ocupa todo). Asi nunca quedan pisados.
+        const beforeList = hasTimed ? flexBefore ?? [] : [];
+        const afterList = hasTimed
+          ? flexAfter ?? []
+          : [...(flexBefore ?? []), ...(flexAfter ?? [])];
+
+        const renderChip = (t: Task) => {
+          const isDone = !!t.done;
+          const isOverdue =
+            !isDone && routineOverdueRef && routine.endHour <= routineOverdueRef;
+          const isDragging = chipDraggingId === t.id;
+          const isDragOver =
+            chipDragOverId === t.id && chipDraggingId !== t.id;
+          return (
+            <button
+              key={t.id}
+              draggable
+              onDragStart={(e) => {
+                e.stopPropagation();
+                e.dataTransfer.setData("text/task-id", t.id);
+                e.dataTransfer.effectAllowed = "move";
+                setChipDraggingId(t.id);
+              }}
+              onDragOver={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                e.dataTransfer.dropEffect = "move";
+                setChipDragOverId(t.id);
+              }}
+              onDrop={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                const srcId = e.dataTransfer.getData("text/task-id");
+                if (srcId && srcId !== t.id) handleTaskDrop(srcId, t.id);
+                setChipDraggingId(null);
+                setChipDragOverId(null);
+                setZoneHover(null);
+              }}
+              onDragEnd={() => {
+                setChipDraggingId(null);
+                setChipDragOverId(null);
+                setZoneHover(null);
+              }}
+              onPointerDown={(e) => e.stopPropagation()}
+              onDoubleClick={(e) => {
+                e.stopPropagation();
+                toggleTask(t.id);
+              }}
+              onClick={(e) => {
+                e.stopPropagation();
+                onFlexTaskOpen?.(t.id);
+              }}
+              className={clsx(
+                "pointer-events-auto rounded-lg flex items-center gap-3 shadow-md hover:shadow-lg transition-all shrink-0 max-w-full text-left cursor-move",
+                "ring-1 ring-fafo-text/5",
+                compact
+                  ? "px-2.5 py-1.5 text-[11px] gap-2"
+                  : "px-3.5 py-3 text-[15px] md:px-3 md:py-2 md:text-[13px] md:gap-2",
+                isDone
+                  ? "bg-emerald-200 text-emerald-900 line-through"
+                  : isOverdue
+                    ? "bg-red-200 text-red-900 ring-1 ring-red-400"
+                    : "bg-fafo-panel/95 text-fafo-text",
+                isDragging && "opacity-30",
+                isDragOver &&
+                  "ring-2 ring-fafo-accent border-t-2 border-fafo-accent"
+              )}
+              title={`${t.name}${isDone ? " (hecha)" : isOverdue ? " (vencida)" : ""} · click: editar · doble click: marcar · arrastra para reordenar`}
+            >
+              <span
+                onClick={(e) => {
                   e.stopPropagation();
                   toggleTask(t.id);
                 }}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onFlexTaskOpen?.(t.id);
-                }}
                 className={clsx(
-                  "pointer-events-auto rounded-lg flex items-center gap-3 shadow-md hover:shadow-lg transition-all shrink-0 max-w-full text-left cursor-move",
-                  "ring-1 ring-fafo-text/5",
-                  // Mobile-first sizing — grande y comodo en mobile, mas compacto en desktop
+                  "rounded-full border-2 flex items-center justify-center shrink-0 cursor-pointer",
                   compact
-                    ? "px-2.5 py-1.5 text-[11px] gap-2"
-                    : "px-3.5 py-3 text-[15px] md:px-3 md:py-2 md:text-[13px] md:gap-2",
+                    ? "w-4 h-4 text-[10px]"
+                    : "w-5 h-5 text-xs md:w-4 md:h-4 md:text-[10px]",
                   isDone
-                    ? "bg-emerald-200 text-emerald-900 line-through"
-                    : isOverdue
-                      ? "bg-red-200 text-red-900 ring-1 ring-red-400"
-                      : "bg-fafo-panel/95 text-fafo-text",
-                  isDragging && "opacity-30",
-                  isDragOver && "ring-2 ring-fafo-accent border-t-2 border-fafo-accent"
+                    ? "bg-fafo-accent2 border-fafo-accent2 text-white"
+                    : "border-fafo-muted/60 hover:border-fafo-accent"
                 )}
-                title={`${t.name}${isDone ? " (hecha)" : isOverdue ? " (vencida)" : ""} · click: editar · doble click: marcar · arrastra para reordenar`}
               >
-                <span
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    toggleTask(t.id);
-                  }}
-                  className={clsx(
-                    "rounded-full border-2 flex items-center justify-center shrink-0 cursor-pointer",
-                    compact
-                      ? "w-4 h-4 text-[10px]"
-                      : "w-5 h-5 text-xs md:w-4 md:h-4 md:text-[10px]",
-                    isDone
-                      ? "bg-fafo-accent2 border-fafo-accent2 text-white"
-                      : "border-fafo-muted/60 hover:border-fafo-accent"
-                  )}
-                >
-                  {isDone && <span className="leading-none">✓</span>}
-                </span>
-                <span
-                  className={clsx(
-                    "rounded-full shrink-0",
-                    PRIORITY_DOT[t.priority],
-                    compact ? "w-1.5 h-1.5" : "w-2 h-2 md:w-1.5 md:h-1.5"
-                  )}
-                />
-                <span className="truncate font-medium flex-1">{t.name}</span>
-                {t.recurringInRoutine ? (
-                  <span
-                    className="shrink-0 text-[9px] font-bold uppercase tracking-wider bg-fafo-accent/15 text-fafo-accent px-1.5 py-0.5 rounded"
-                    title="Repetitiva: se rehace cada vez que aparece la rutina"
-                  >
-                    ↻ <span className="hidden sm:inline">Repet</span>
-                  </span>
-                ) : (
-                  <span
-                    className="shrink-0 text-[9px] uppercase tracking-wider text-fafo-muted/60 hidden sm:inline"
-                    title="Unica: una vez hecha, queda hecha"
-                  >
-                    Unica
-                  </span>
+                {isDone && <span className="leading-none">✓</span>}
+              </span>
+              <span
+                className={clsx(
+                  "rounded-full shrink-0",
+                  PRIORITY_DOT[t.priority],
+                  compact ? "w-1.5 h-1.5" : "w-2 h-2 md:w-1.5 md:h-1.5"
                 )}
-                <span className="text-fafo-muted/40 text-[10px] select-none shrink-0 hidden md:inline">
-                  ⋮⋮
+              />
+              <span className="truncate font-medium flex-1">{t.name}</span>
+              {t.recurringInRoutine ? (
+                <span
+                  className="shrink-0 text-[9px] font-bold uppercase tracking-wider bg-fafo-accent/15 text-fafo-accent px-1.5 py-0.5 rounded"
+                  title="Repetitiva: se rehace cada vez que aparece la rutina"
+                >
+                  ↻ <span className="hidden sm:inline">Repet</span>
                 </span>
-              </button>
-            );
-            })}
-          </div>
+              ) : (
+                <span
+                  className="shrink-0 text-[9px] uppercase tracking-wider text-fafo-muted/60 hidden sm:inline"
+                  title="Unica: una vez hecha, queda hecha"
+                >
+                  Unica
+                </span>
+              )}
+              <span className="text-fafo-muted/40 text-[10px] select-none shrink-0 hidden md:inline">
+                ⋮⋮
+              </span>
+            </button>
+          );
+        };
+
+        // Handler para drop en una zona "vacia" (no sobre un chip).
+        // Mueve el chip al lado correspondiente respecto del bloque de timed.
+        const handleZoneDrop = (zone: "before" | "after") =>
+          (e: React.DragEvent) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const srcId = e.dataTransfer.getData("text/task-id");
+            setChipDraggingId(null);
+            setChipDragOverId(null);
+            setZoneHover(null);
+            if (!srcId) return;
+            // Aseguro que el chip pertenezca a esta rutina y a este dia
+            handleTaskDrop(srcId);
+            // Reordeno en el array para que quede del lado pedido
+            if (zone === "before" && firstTimedId && srcId !== firstTimedId) {
+              reorderTask(srcId, firstTimedId);
+            } else if (zone === "after" && lastTimedId && srcId !== lastTimedId) {
+              moveTaskAfter(srcId, lastTimedId);
+            }
+          };
+
+        const zoneDragOver = (zone: "before" | "after") =>
+          (e: React.DragEvent) => {
+            e.preventDefault();
+            e.stopPropagation();
+            e.dataTransfer.dropEffect = "move";
+            setZoneHover(zone);
+          };
+
+        const showZones = hasTimed && anyTaskDragging;
+
+        return (
+          <>
+            {/* Zona "before" — arriba del bloque de timed */}
+            {(beforeList.length > 0 || (showZones && beforeHeight >= 24)) && (
+              <div
+                className={clsx(
+                  "absolute left-2 right-2 flex flex-col gap-1.5 overflow-y-auto md:left-1.5 md:right-7 md:gap-1 transition-colors rounded",
+                  showZones && "pointer-events-auto",
+                  !showZones && "pointer-events-none",
+                  zoneHover === "before" &&
+                    "bg-fafo-accent/10 outline outline-2 outline-dashed outline-fafo-accent"
+                )}
+                style={{ top: beforeTop, height: beforeHeight }}
+                onDragOver={showZones ? zoneDragOver("before") : undefined}
+                onDragLeave={
+                  showZones ? () => setZoneHover(null) : undefined
+                }
+                onDrop={showZones ? handleZoneDrop("before") : undefined}
+              >
+                {beforeList.map(renderChip)}
+              </div>
+            )}
+
+            {/* Zona "after" — abajo del bloque de timed (o todo el bloque si no hay timed) */}
+            {(afterList.length > 0 || (showZones && afterHeight >= 24)) && (
+              <div
+                className={clsx(
+                  "absolute left-2 right-2 flex flex-col gap-1.5 overflow-y-auto md:left-1.5 md:right-7 md:gap-1 transition-colors rounded",
+                  showZones && "pointer-events-auto",
+                  !showZones && "pointer-events-none",
+                  zoneHover === "after" &&
+                    "bg-fafo-accent/10 outline outline-2 outline-dashed outline-fafo-accent"
+                )}
+                style={{ top: afterTop, height: afterHeight }}
+                onDragOver={showZones ? zoneDragOver("after") : undefined}
+                onDragLeave={
+                  showZones ? () => setZoneHover(null) : undefined
+                }
+                onDrop={showZones ? handleZoneDrop("after") : undefined}
+              >
+                {afterList.map(renderChip)}
+              </div>
+            )}
+          </>
         );
       })()}
 
@@ -1210,31 +1320,49 @@ function DayView({
                   const rh = (r.endHour - r.startHour) * HOUR_HEIGHT;
                   const flexInRoutine =
                     flexByRoutine.get(p.id)?.get(r.id) ?? [];
-                  // Rangos verticales ocupados por tareas con horario que
-                  // CAEN visualmente dentro de la rutina (overlap por horas),
-                  // sin importar si tienen routineId seteado o no. Asi los
-                  // chips flex nunca se solapan con una timed que se ve adentro.
-                  const scheduledInRoutine = ptasks
-                    .filter(
-                      (t) =>
-                        !t.flexible &&
-                        t.endHour > r.startHour &&
-                        t.startHour < r.endHour
-                    )
-                    .map((t) => ({
-                      top: (Math.max(t.startHour, r.startHour) - r.startHour) * HOUR_HEIGHT,
-                      height:
-                        (Math.min(t.endHour, r.endHour) -
-                          Math.max(t.startHour, r.startHour)) *
-                        HOUR_HEIGHT,
-                    }));
+                  // Tareas con horario que CAEN visualmente dentro de la rutina
+                  // (overlap por horas), sin importar si tienen routineId seteado
+                  // o no. Asi los chips flex nunca se solapan con una timed.
+                  const timedInRoutine = ptasks.filter(
+                    (t) =>
+                      !t.flexible &&
+                      t.endHour > r.startHour &&
+                      t.startHour < r.endHour
+                  );
+                  const scheduledInRoutine = timedInRoutine.map((t) => ({
+                    top:
+                      (Math.max(t.startHour, r.startHour) - r.startHour) *
+                      HOUR_HEIGHT,
+                    height:
+                      (Math.min(t.endHour, r.endHour) -
+                        Math.max(t.startHour, r.startHour)) *
+                      HOUR_HEIGHT,
+                  }));
+                  // Split flex chips por posicion en el array global vs el
+                  // indice de la primera timed: si el chip aparece antes en el
+                  // array, va arriba ("before"), si no, va abajo ("after").
+                  const firstTimed = timedInRoutine[0];
+                  const lastTimed = timedInRoutine[timedInRoutine.length - 1];
+                  const firstTimedIdx = firstTimed
+                    ? tasks.findIndex((x) => x.id === firstTimed.id)
+                    : Infinity;
+                  const flexBefore: Task[] = [];
+                  const flexAfter: Task[] = [];
+                  for (const ft of flexInRoutine) {
+                    const idx = tasks.findIndex((x) => x.id === ft.id);
+                    if (idx !== -1 && idx < firstTimedIdx) flexBefore.push(ft);
+                    else flexAfter.push(ft);
+                  }
                   return (
                     <RoutineBlock
                       key={r.id}
                       routine={r}
                       top={rtop}
                       height={rh}
-                      flexTasks={flexInRoutine}
+                      flexBefore={flexBefore}
+                      flexAfter={flexAfter}
+                      firstTimedId={firstTimed?.id}
+                      lastTimedId={lastTimed?.id}
                       scheduledRanges={scheduledInRoutine}
                       routineOverdueRef={isToday ? ctx.hour : null}
                       dayISO={selectedDate}
@@ -1641,20 +1769,33 @@ function WeekView({
                   const rh = (r.endHour - r.startHour) * HOUR_HEIGHT;
                   const flexInRoutine =
                     flexByDayRoutine.get(d)?.get(r.id) ?? [];
-                  const scheduledInRoutine = dtasks
-                    .filter(
-                      (t) =>
-                        !t.flexible &&
-                        t.endHour > r.startHour &&
-                        t.startHour < r.endHour
-                    )
-                    .map((t) => ({
-                      top: (Math.max(t.startHour, r.startHour) - r.startHour) * HOUR_HEIGHT,
-                      height:
-                        (Math.min(t.endHour, r.endHour) -
-                          Math.max(t.startHour, r.startHour)) *
-                        HOUR_HEIGHT,
-                    }));
+                  const timedInRoutine = dtasks.filter(
+                    (t) =>
+                      !t.flexible &&
+                      t.endHour > r.startHour &&
+                      t.startHour < r.endHour
+                  );
+                  const scheduledInRoutine = timedInRoutine.map((t) => ({
+                    top:
+                      (Math.max(t.startHour, r.startHour) - r.startHour) *
+                      HOUR_HEIGHT,
+                    height:
+                      (Math.min(t.endHour, r.endHour) -
+                        Math.max(t.startHour, r.startHour)) *
+                      HOUR_HEIGHT,
+                  }));
+                  const firstTimed = timedInRoutine[0];
+                  const lastTimed = timedInRoutine[timedInRoutine.length - 1];
+                  const firstTimedIdx = firstTimed
+                    ? tasks.findIndex((x) => x.id === firstTimed.id)
+                    : Infinity;
+                  const flexBefore: Task[] = [];
+                  const flexAfter: Task[] = [];
+                  for (const ft of flexInRoutine) {
+                    const idx = tasks.findIndex((x) => x.id === ft.id);
+                    if (idx !== -1 && idx < firstTimedIdx) flexBefore.push(ft);
+                    else flexAfter.push(ft);
+                  }
                   return (
                     <RoutineBlock
                       key={`${d}-${r.id}`}
@@ -1662,7 +1803,10 @@ function WeekView({
                       top={rtop}
                       height={rh}
                       compact
-                      flexTasks={flexInRoutine}
+                      flexBefore={flexBefore}
+                      flexAfter={flexAfter}
+                      firstTimedId={firstTimed?.id}
+                      lastTimedId={lastTimed?.id}
                       scheduledRanges={scheduledInRoutine}
                       routineOverdueRef={d === today ? ctx.hour : null}
                       dayISO={d}
@@ -2037,20 +2181,33 @@ function WeekViewAll({
                       return false;
                     return true;
                   });
-                  const scheduledInRoutine = ptasks
-                    .filter(
-                      (t) =>
-                        !t.flexible &&
-                        t.endHour > r.startHour &&
-                        t.startHour < r.endHour
-                    )
-                    .map((t) => ({
-                      top: (Math.max(t.startHour, r.startHour) - r.startHour) * HOUR_HEIGHT,
-                      height:
-                        (Math.min(t.endHour, r.endHour) -
-                          Math.max(t.startHour, r.startHour)) *
-                        HOUR_HEIGHT,
-                    }));
+                  const timedInRoutine = ptasks.filter(
+                    (t) =>
+                      !t.flexible &&
+                      t.endHour > r.startHour &&
+                      t.startHour < r.endHour
+                  );
+                  const scheduledInRoutine = timedInRoutine.map((t) => ({
+                    top:
+                      (Math.max(t.startHour, r.startHour) - r.startHour) *
+                      HOUR_HEIGHT,
+                    height:
+                      (Math.min(t.endHour, r.endHour) -
+                        Math.max(t.startHour, r.startHour)) *
+                      HOUR_HEIGHT,
+                  }));
+                  const firstTimed = timedInRoutine[0];
+                  const lastTimed = timedInRoutine[timedInRoutine.length - 1];
+                  const firstTimedIdx = firstTimed
+                    ? tasks.findIndex((x) => x.id === firstTimed.id)
+                    : Infinity;
+                  const flexBefore: Task[] = [];
+                  const flexAfter: Task[] = [];
+                  for (const ft of flexInRoutine) {
+                    const idx = tasks.findIndex((x) => x.id === ft.id);
+                    if (idx !== -1 && idx < firstTimedIdx) flexBefore.push(ft);
+                    else flexAfter.push(ft);
+                  }
                   return (
                     <RoutineBlock
                       key={`${day}-${r.id}`}
@@ -2058,7 +2215,10 @@ function WeekViewAll({
                       top={rtop}
                       height={rh}
                       compact
-                      flexTasks={flexInRoutine}
+                      flexBefore={flexBefore}
+                      flexAfter={flexAfter}
+                      firstTimedId={firstTimed?.id}
+                      lastTimedId={lastTimed?.id}
                       scheduledRanges={scheduledInRoutine}
                       routineOverdueRef={day === today ? ctx.hour : null}
                       dayISO={day}
