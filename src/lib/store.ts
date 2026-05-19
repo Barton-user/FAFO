@@ -78,6 +78,19 @@ export const useFafoStore = create<AppState & Actions>()(
           done: false,
           ...t,
         };
+        // Default: si el todo va dentro de una rutina que se repite varios
+        // dias, lo marcamos como repetitivo (cada iteracion se hace fresca).
+        // Si el caller seteo explicitamente recurringInRoutine, respetamos.
+        if (
+          task.flexible &&
+          task.routineId &&
+          task.recurringInRoutine === undefined
+        ) {
+          const routine = get().routines.find((r) => r.id === task.routineId);
+          if (routine && routine.weekdays.length > 1) {
+            task.recurringInRoutine = true;
+          }
+        }
         set((s) => ({ tasks: [task, ...s.tasks] }));
         bg("addTask", () => api.upsertTask(task, 0));
         return task;
@@ -346,12 +359,24 @@ export const useFafoStore = create<AppState & Actions>()(
 
       hydrate: (snap) => {
         const settings = snap.settings;
+        // Migracion idempotente: los todos en rutinas (flexible + routineId)
+        // deben ser repetitivos por iteracion. Si vienen sin la flag, la
+        // seteamos en true y pusheamos el cambio a la API.
+        const migratedTasks = snap.tasks.map((t) => {
+          if (t.flexible && t.routineId && !t.recurringInRoutine) {
+            bg("migrateRecurring", () =>
+              api.updateTaskApi(t.id, { recurringInRoutine: true })
+            );
+            return { ...t, recurringInRoutine: true };
+          }
+          return t;
+        });
         set((s) => ({
           ...s,
           people: snap.people.length > 0 ? snap.people : s.people,
           locations: snap.locations,
           routines: snap.routines,
-          tasks: snap.tasks,
+          tasks: migratedTasks,
           dailyLogs: snap.dailyLogs,
           dailyGoal: settings?.daily_goal ?? s.dailyGoal,
           currentLocationId:
@@ -387,6 +412,13 @@ export const useFafoStore = create<AppState & Actions>()(
             isSelf: true,
             createdAt: Date.now(),
           });
+        }
+        // Migracion idempotente: todos los todos en rutinas pasan a Repet.
+        // Se aplica sobre el state local antes de que se renderice.
+        for (const t of state.tasks) {
+          if (t.flexible && t.routineId && !t.recurringInRoutine) {
+            t.recurringInRoutine = true;
+          }
         }
       },
     }
