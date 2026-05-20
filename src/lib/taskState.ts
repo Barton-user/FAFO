@@ -1,4 +1,5 @@
 import type { Task } from "./types";
+import { timestampToISO, todayISO as todayLocalISO } from "./dateUtils";
 
 /**
  * Determina si una tarea esta hecha "para el dia dayISO".
@@ -10,7 +11,7 @@ import type { Task } from "./types";
 export function isTaskDoneForDay(task: Task, dayISO: string): boolean {
   if (task.recurringInRoutine && task.flexible && task.routineId) {
     if (!task.completedAt) return false;
-    const completedDay = new Date(task.completedAt).toISOString().slice(0, 10);
+    const completedDay = timestampToISO(task.completedAt);
     return completedDay === dayISO;
   }
   return !!task.done;
@@ -25,7 +26,7 @@ export function toggleDonePatch(
   dayISO: string
 ): Partial<Task> {
   const currentlyDone = isTaskDoneForDay(task, dayISO);
-  const todayISO = new Date().toISOString().slice(0, 10);
+  const todayISO = todayLocalISO();
   if (task.recurringInRoutine && task.flexible && task.routineId) {
     if (currentlyDone) {
       return { done: false, completedAt: undefined };

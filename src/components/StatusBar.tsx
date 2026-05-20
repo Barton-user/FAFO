@@ -14,6 +14,7 @@ import {
   formatDateLong,
   formatMonth,
   formatWeekRange,
+  timestampToISO,
   todayISO,
 } from "@/lib/dateUtils";
 import clsx from "clsx";
@@ -75,9 +76,7 @@ export function StatusBar({
   const { todayDone, hitGoal } = useMemo(() => {
     const today = todayISO();
     const todayDone = tasks.filter(
-      (t) =>
-        t.completedAt &&
-        new Date(t.completedAt).toISOString().slice(0, 10) === today
+      (t) => t.completedAt && timestampToISO(t.completedAt) === today
     ).length;
     return { todayDone, hitGoal: todayDone >= dailyGoal };
   }, [tasks, dailyGoal]);

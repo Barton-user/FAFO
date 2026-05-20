@@ -2,7 +2,14 @@
 // y Date objects solo cuando hace falta computar.
 
 export function todayISO(): string {
-  return new Date().toISOString().slice(0, 10);
+  // Usamos hora LOCAL (no UTC). toISOString() devuelve UTC, lo que en
+  // Argentina (UTC-3) hace que despues de las 21hs salte al dia siguiente.
+  return toISO(new Date());
+}
+
+/** Convierte un timestamp (ms desde epoch) a string YYYY-MM-DD en hora local. */
+export function timestampToISO(ts: number): string {
+  return toISO(new Date(ts));
 }
 
 export function parseISO(iso: string): Date {

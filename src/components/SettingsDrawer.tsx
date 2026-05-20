@@ -4,6 +4,7 @@ import { useFafoStore } from "@/lib/store";
 import type { Task, Weekday } from "@/lib/types";
 import { useEffect, useMemo, useState } from "react";
 import { Avatar } from "./Avatar";
+import { todayISO, timestampToISO } from "@/lib/dateUtils";
 import clsx from "clsx";
 
 const WEEKDAY_SHORT = ["D", "L", "M", "X", "J", "V", "S"];
@@ -81,7 +82,7 @@ export function SettingsDrawer({
 function ResumenTab() {
   const tasks = useFafoStore((s) => s.tasks);
   const dailyGoal = useFafoStore((s) => s.dailyGoal);
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayISO();
 
   const periods = [
     { label: "Hoy", days: 1 },
@@ -99,9 +100,7 @@ function ResumenTab() {
   });
 
   const todayDone = tasks.filter(
-    (t) =>
-      t.completedAt &&
-      new Date(t.completedAt).toISOString().slice(0, 10) === today
+    (t) => t.completedAt && timestampToISO(t.completedAt) === today
   ).length;
 
   return (

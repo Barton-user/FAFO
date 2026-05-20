@@ -16,6 +16,7 @@ import type {
 import { SEED_STATE } from "./seed";
 import * as api from "./api";
 import { useSyncStore } from "./syncStore";
+import { todayISO, timestampToISO } from "./dateUtils";
 
 const uid = () => Math.random().toString(36).slice(2, 10);
 
@@ -317,12 +318,10 @@ export const useFafoStore = create<AppState & Actions>()(
       },
 
       recordTodayLog: () => {
-        const today = new Date().toISOString().slice(0, 10);
+        const today = todayISO();
         const { tasks, dailyGoal, dailyLogs, longestStreak } = get();
         const todayTasks = tasks.filter(
-          (t) =>
-            t.completedAt &&
-            new Date(t.completedAt).toISOString().slice(0, 10) === today
+          (t) => t.completedAt && timestampToISO(t.completedAt) === today
         );
         const completed = todayTasks.length;
         const total = tasks.length;

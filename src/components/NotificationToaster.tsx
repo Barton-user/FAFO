@@ -2,6 +2,7 @@
 
 import { useFafoStore } from "@/lib/store";
 import { useSyncStore } from "@/lib/syncStore";
+import { todayISO, timestampToISO } from "@/lib/dateUtils";
 import { useEffect, useRef, useState } from "react";
 
 interface Toast {
@@ -42,11 +43,9 @@ export function NotificationToaster() {
   useEffect(() => {
     const done = tasks.filter((t) => t.done).length;
     if (lastCountRef.current >= 0 && done > lastCountRef.current) {
-      const today = new Date().toISOString().slice(0, 10);
+      const today = todayISO();
       const todayDone = tasks.filter(
-        (t) =>
-          t.completedAt &&
-          new Date(t.completedAt).toISOString().slice(0, 10) === today
+        (t) => t.completedAt && timestampToISO(t.completedAt) === today
       ).length;
       if (todayDone === dailyGoal) {
         push("win", `Meta diaria desbloqueada (${dailyGoal}/${dailyGoal}). FAFO++`);
@@ -62,11 +61,9 @@ export function NotificationToaster() {
   // Periodic productivity check
   useEffect(() => {
     function check() {
-      const today = new Date().toISOString().slice(0, 10);
+      const today = todayISO();
       const todayDone = tasks.filter(
-        (t) =>
-          t.completedAt &&
-          new Date(t.completedAt).toISOString().slice(0, 10) === today
+        (t) => t.completedAt && timestampToISO(t.completedAt) === today
       ).length;
       const hour = new Date().getHours();
       if (hour >= 18 && todayDone < dailyGoal) {
