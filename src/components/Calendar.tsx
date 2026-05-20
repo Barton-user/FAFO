@@ -33,6 +33,10 @@ export interface DragPayload {
   /** Si la creacion ocurrio dentro del area visual de una rutina, dejamos
    * pre-seleccionado el id de esa rutina en el modal. */
   routineId?: string;
+  /** "task" (default) abre el TaskModal. "routine" crea una rutina nueva
+   * con esos horarios y abre su editor. Se setea cuando el usuario tenia
+   * Shift presionado al soltar el drag. */
+  kind?: "task" | "routine";
 }
 
 interface Props {
@@ -1250,6 +1254,7 @@ function DayView({
       const b = snapHour(Math.max(drag.startY, y));
       setDrag(null);
       if (b - a >= MIN_DURATION) {
+        const wantsRoutine = e.shiftKey;
         const dragRoutines = routinesByPerson.get(drag.personId) ?? [];
         const container = findContainingRoutine(dragRoutines, a, b);
         onDragComplete({
@@ -1257,7 +1262,11 @@ function DayView({
           endHour: b,
           personId: drag.personId,
           weekday,
-          routineId: container?.id,
+          // Si shift estaba presionado, creamos rutina; sino, tarea.
+          // No prellenamos routineId en modo rutina (no tendria sentido
+          // anidar una rutina dentro de otra).
+          routineId: wantsRoutine ? undefined : container?.id,
+          kind: wantsRoutine ? "routine" : "task",
         });
       }
     },
@@ -1681,6 +1690,7 @@ function WeekView({
       const weekday = parseISO(drag.dayISO).getDay() as Weekday;
       setDrag(null);
       if (b - a >= MIN_DURATION) {
+        const wantsRoutine = e.shiftKey;
         const dragRoutines = routinesByDay.get(drag.dayISO) ?? [];
         const container = findContainingRoutine(dragRoutines, a, b);
         onDragComplete({
@@ -1688,7 +1698,8 @@ function WeekView({
           endHour: b,
           personId: selfId,
           weekday,
-          routineId: container?.id,
+          routineId: wantsRoutine ? undefined : container?.id,
+          kind: wantsRoutine ? "routine" : "task",
         });
       }
     },
@@ -2068,6 +2079,7 @@ function WeekViewAll({
       const sc = subCols[idx];
       setDrag(null);
       if (sc && b - a >= MIN_DURATION) {
+        const wantsRoutine = e.shiftKey;
         const colRoutines = routines.filter((r) => {
           const owner = r.personId ?? selfDefaultId;
           return owner === sc.person.id && r.weekdays.includes(sc.weekday);
@@ -2078,7 +2090,8 @@ function WeekViewAll({
           endHour: b,
           personId: sc.person.id,
           weekday: sc.weekday,
-          routineId: container?.id,
+          routineId: wantsRoutine ? undefined : container?.id,
+          kind: wantsRoutine ? "routine" : "task",
         });
       }
     },
@@ -2474,7 +2487,17 @@ function MonthView({ selectedDate, onSelectDate }: Props) {
           const stats = dayStats.get(iso) ?? { total: 0, done: 0, overdue: 0 };
           const ts = tasksByDay.get(iso) ?? [];
           const undone = ts.filter((t) => !isTaskDoneForDay(t, iso));
-          const top2 = undone.slice(0, 2);
+          // Orden: timed por hora ascendente, despues flex por prioridad.
+          // Antes era el orden global del store, lo que escondia las flex
+          // si habia muchas timed primero — ahora ambas son visibles.
+          const sortedUndone = [...undone].sort((a, b) => {
+            const aFlex = a.flexible ? 1 : 0;
+            const bFlex = b.flexible ? 1 : 0;
+            if (aFlex !== bFlex) return aFlex - bFlex;
+            if (!a.flexible && !b.flexible) return a.startHour - b.startHour;
+            return a.priority - b.priority;
+          });
+          const top3 = sortedUndone.slice(0, 3);
           const completionPct =
             stats.total > 0 ? (stats.done / stats.total) * 100 : 0;
           const overduePct =
@@ -2536,10 +2559,18 @@ function MonthView({ selectedDate, onSelectDate }: Props) {
               )}
 
               <div className="flex flex-col gap-0.5 mt-0.5">
-                {top2.map((t) => (
+                {top3.map((t) => (
                   <div
                     key={t.id}
-                    className="flex items-center gap-1 text-[10px] truncate"
+                    className={clsx(
+                      "flex items-center gap-1 text-[10px] truncate",
+                      t.flexible && "italic text-fafo-muted"
+                    )}
+                    title={
+                      t.flexible
+                        ? `${t.name} (flex)`
+                        : `${Math.floor(t.startHour).toString().padStart(2, "0")}h ${t.name}`
+                    }
                   >
                     <span
                       className={clsx(
@@ -2547,12 +2578,25 @@ function MonthView({ selectedDate, onSelectDate }: Props) {
                         PRIORITY_DOT[t.priority]
                       )}
                     />
+                    {!t.flexible && (
+                      <span className="text-[9px] tabular-nums text-fafo-muted shrink-0">
+                        {Math.floor(t.startHour).toString().padStart(2, "0")}h
+                      </span>
+                    )}
+                    {t.flexible && (
+                      <span
+                        className="text-[9px] text-fafo-muted shrink-0"
+                        aria-label="flex"
+                      >
+                        ·
+                      </span>
+                    )}
                     <span className="truncate">{t.name}</span>
                   </div>
                 ))}
-                {undone.length > 2 && (
+                {undone.length > 3 && (
                   <span className="text-[9px] text-fafo-muted">
-                    +{undone.length - 2} mas
+                    +{undone.length - 3} mas
                   </span>
                 )}
               </div>

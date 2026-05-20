@@ -314,11 +314,19 @@ no se ven hasta que cambies de foco. Para upgrade:
 - Capacitor o React Native si se requiere notificaciones nativas.
 
 ### Mejoras UX pendientes
-- Pop-up para crear rutina directamente desde el calendario con drag (hoy
-  el drag crea tareas, no rutinas).
-- Recompute "now indicator" cuando cambia el viewport (no solo cada 30s).
-- Vista mes con flex tasks visibles (actualmente solo muestra dots).
-- Botón de "ir a hoy" más visible en mobile.
+- (resueltas) Pop-up crear rutina con drag: ahora **Shift + drag** en el
+  calendario crea una rutina nueva con esos horarios y abre su editor
+  para terminar de configurarla.
+- (resuelta) Recompute "now indicator": `useNow` ahora refresca al volver
+  al foreground (focus + visibilitychange) y al hacer resize del viewport
+  (debounced 200ms). Cubre el caso de tab dormido y de cambio de tamaño.
+- (resuelta) Vista mes con flex tasks visibles: muestra hasta 3 items por
+  día con orden timed-por-hora primero, después flex por prioridad. Las
+  flex se marcan en cursiva con un dot en vez de la hora.
+- (resuelta) Navegación de fecha en mobile + botón "Hoy": `MobileApp`
+  ahora tiene `selectedDate` con prev/next y un botón "⊙ Hoy" visible
+  solo cuando no estás en el día actual. Header muestra "Mi día" /
+  "Mañana" / "Ayer" / fecha larga según corresponda.
 
 ### Performance
 - Memoizar más en Calendar.tsx — los `useMemo` deberían cubrir el caso pero

@@ -5,7 +5,7 @@ import { useResolvedContext } from "@/lib/context";
 import { useAuth } from "@/lib/auth";
 import { useSyncStore } from "@/lib/syncStore";
 import { isTaskDoneForDay, toggleDonePatch } from "@/lib/taskState";
-import { todayISO, formatDateLong } from "@/lib/dateUtils";
+import { todayISO, formatDateLong, addDays, parseISO } from "@/lib/dateUtils";
 import type { Task, Weekday, Priority, Routine } from "@/lib/types";
 import { useMemo, useState } from "react";
 import clsx from "clsx";
@@ -51,11 +51,22 @@ export function MobileApp() {
   const [quickName, setQuickName] = useState("");
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dragOverId, setDragOverId] = useState<string | null>(null);
+  const [selectedDate, setSelectedDate] = useState<string>(() => todayISO());
 
   const today = todayISO();
-  const weekday = ctx.now.getDay() as Weekday;
+  const isToday = selectedDate === today;
+  const weekday = parseISO(selectedDate).getDay() as Weekday;
   const self = people.find((p) => p.isSelf) ?? people[0];
   const selfId = self?.id ?? "person-self";
+
+  // Label friendly de la fecha: "Mi dia" (hoy), "Manana", "Ayer", o fecha
+  // larga para cualquier otro dia. Le da contexto sin abrumar.
+  const headerLabel = (() => {
+    if (isToday) return "Mi dia";
+    if (selectedDate === addDays(today, 1)) return "Manana";
+    if (selectedDate === addDays(today, -1)) return "Ayer";
+    return formatDateLong(selectedDate);
+  })();
 
   // Filtrado inteligente: tareas que aplican hoy para mi, respetando GPS/rutina
   const visibleTasks = useMemo(() => {
@@ -138,8 +149,15 @@ export function MobileApp() {
   }
 
   function handleNewTaskFab() {
-    const now = new Date();
-    const sh = Math.max(6, Math.min(22, now.getHours() + 1));
+    // En el dia de hoy: arranca a la hora siguiente real. En otros dias:
+    // sugerencia neutral a las 9hs.
+    let sh: number;
+    if (isToday) {
+      const now = new Date();
+      sh = Math.max(6, Math.min(22, now.getHours() + 1));
+    } else {
+      sh = 9;
+    }
     setNewDraft({
       startHour: sh,
       endHour: Math.min(24, sh + 1),
@@ -149,7 +167,7 @@ export function MobileApp() {
   }
 
   const totalToday = visibleTasks.length;
-  const doneToday = visibleTasks.filter((t) => isTaskDoneForDay(t, today))
+  const doneToday = visibleTasks.filter((t) => isTaskDoneForDay(t, selectedDate))
     .length;
 
   return (
@@ -167,11 +185,16 @@ export function MobileApp() {
           ☰
         </button>
         <div className="flex-1 min-w-0 leading-tight">
-          <div className="text-fafo-accent font-black text-base tracking-tighter">
-            Mi día
+          <div
+            className={clsx(
+              "font-black text-base tracking-tighter capitalize truncate",
+              isToday ? "text-fafo-accent" : "text-fafo-text"
+            )}
+          >
+            {headerLabel}
           </div>
           <div className="text-[10px] text-fafo-muted capitalize truncate">
-            {formatDateLong(today)}
+            {formatDateLong(selectedDate)}
             {totalToday > 0 ? ` · ${doneToday}/${totalToday}` : ""}
             {ctx.activeLocation
               ? ` · ${ctx.activeLocation.emoji} ${ctx.activeLocation.name}`
@@ -194,6 +217,33 @@ export function MobileApp() {
           </button>
         </div>
       </header>
+
+      {/* Nav de fecha: prev / Hoy (visible solo si no estas en hoy) / next */}
+      <div className="px-3 pt-2 flex items-center gap-1.5">
+        <button
+          onClick={() => setSelectedDate(addDays(selectedDate, -1))}
+          className="w-9 h-9 rounded-md border border-fafo-border text-fafo-muted active:bg-fafo-panel2/40 flex items-center justify-center text-lg shrink-0"
+          aria-label="Dia anterior"
+        >
+          ‹
+        </button>
+        {!isToday && (
+          <button
+            onClick={() => setSelectedDate(today)}
+            className="px-3 h-9 rounded-md border border-fafo-accent2 text-fafo-accent2 text-xs font-semibold active:bg-fafo-accent2/10 flex items-center gap-1 shrink-0"
+          >
+            <span className="text-sm leading-none">⊙</span> Hoy
+          </button>
+        )}
+        <button
+          onClick={() => setSelectedDate(addDays(selectedDate, 1))}
+          className="w-9 h-9 rounded-md border border-fafo-border text-fafo-muted active:bg-fafo-panel2/40 flex items-center justify-center text-lg shrink-0"
+          aria-label="Dia siguiente"
+        >
+          ›
+        </button>
+        <div className="flex-1" />
+      </div>
 
       {/* Quick add */}
       <form
@@ -231,7 +281,9 @@ export function MobileApp() {
         {groups.length === 0 ? (
           <div className="text-center py-16 text-fafo-muted text-sm">
             <div className="text-5xl mb-3 opacity-40">🌱</div>
-            <div>No hay tareas para hoy.</div>
+            <div>
+              No hay tareas para {isToday ? "hoy" : headerLabel.toLowerCase()}.
+            </div>
             <div className="text-xs mt-1 opacity-70">
               Agregá una arriba con el botón +
             </div>
@@ -275,7 +327,7 @@ export function MobileApp() {
                   </span>
                 )}
                 <span className="ml-auto text-[10px] text-fafo-muted tabular-nums">
-                  {g.tasks.filter((t) => isTaskDoneForDay(t, today)).length}/
+                  {g.tasks.filter((t) => isTaskDoneForDay(t, selectedDate)).length}/
                   {g.tasks.length}
                 </span>
               </div>
@@ -290,11 +342,11 @@ export function MobileApp() {
                       key={t.id}
                       task={t}
                       routines={routines}
-                      todayISO={today}
+                      todayISO={selectedDate}
                       isDragging={draggingId === t.id}
                       isDragOver={dragOverId === t.id && draggingId !== t.id}
                       onToggle={() =>
-                        updateTask(t.id, toggleDonePatch(t, today))
+                        updateTask(t.id, toggleDonePatch(t, selectedDate))
                       }
                       onOpen={() => setEditingId(t.id)}
                       onDragStart={() => setDraggingId(t.id)}

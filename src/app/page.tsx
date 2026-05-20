@@ -131,6 +131,35 @@ function HomeInner() {
     setSettingsOpen(true);
   };
 
+  // Shift+drag en el calendario crea una rutina directamente con esos horarios
+  // y abre el editor para que la termines de configurar (nombre, color, dias).
+  const handleDragComplete = (p: DragPayload) => {
+    if (p.kind === "routine") {
+      const palette = [
+        "#DD7493",
+        "#5BACC4",
+        "#9B8FBC",
+        "#E89E5C",
+        "#88B89F",
+        "#D88677",
+      ];
+      const color = palette[Math.floor(Math.random() * palette.length)];
+      const created = useFafoStore.getState().addRoutine({
+        name: "Nueva rutina",
+        color,
+        weekdays: [p.weekday],
+        startHour: p.startHour,
+        endHour: p.endHour,
+        personId: p.personId,
+      });
+      setEditingRoutineId(created.id);
+      setSettingsTab("rutinas");
+      setSettingsOpen(true);
+      return;
+    }
+    setDraft(p);
+  };
+
   // Click en el chip de una rutina -> editar
   const handleEditRoutine = (id: string) => {
     setEditingRoutineId(id);
@@ -161,7 +190,7 @@ function HomeInner() {
           selectedDate={selectedDate}
           viewingPersonId={viewingPersonId}
           onSelectDate={handleSelectDate}
-          onDragComplete={(p) => setDraft(p)}
+          onDragComplete={handleDragComplete}
           onTaskClick={(id) => setEditing(id)}
           onRoutineEdit={handleEditRoutine}
         />
@@ -243,6 +272,13 @@ function FooterLegend({ viewMode }: { viewMode: ViewMode }) {
           <span>doble click en cualquier zona crea una tarea de 1h</span>
           <span className="opacity-40">·</span>
           <span>arrastra para dibujar la duracion</span>
+          <span className="opacity-40">·</span>
+          <span>
+            <kbd className="px-1 py-0.5 rounded border border-fafo-border text-[9px] text-fafo-text font-semibold">
+              shift
+            </kbd>
+            {" + arrastrar = crear rutina"}
+          </span>
           <span className="opacity-40">·</span>
           <span>click en una tarea para editarla</span>
           <span className="opacity-40">·</span>
