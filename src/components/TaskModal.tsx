@@ -80,7 +80,22 @@ export function TaskModal({
     } else if (newDraft) {
       setName("");
       setPriority(2);
-      setRoutineId(newDraft.routineId);
+      // Si el caller paso routineId explicitamente, usarlo. Como fallback,
+      // detectamos la rutina contenedora aca mismo a partir de las horas y
+      // el weekday del draft. Asi blindamos la pre-seleccion incluso si
+      // algun caller del calendario no setea routineId.
+      let initialRoutineId = newDraft.routineId;
+      if (!initialRoutineId) {
+        const center = (newDraft.startHour + newDraft.endHour) / 2;
+        const candidate = routines.find((r) => {
+          if (!r.weekdays.includes(newDraft.weekday)) return false;
+          if (r.personId && newDraft.personId && r.personId !== newDraft.personId)
+            return false;
+          return center >= r.startHour && center < r.endHour;
+        });
+        initialRoutineId = candidate?.id;
+      }
+      setRoutineId(initialRoutineId);
       setLocationId(undefined);
       setWeekdays([newDraft.weekday]);
       setStartHour(newDraft.startHour);
@@ -89,7 +104,7 @@ export function TaskModal({
       setIsVital(false);
       setFlexible(false);
     }
-  }, [open, task, newDraft]);
+  }, [open, task, newDraft, routines]);
 
   if (!open) return null;
 
