@@ -978,7 +978,8 @@ function RoutineBlock({
         };
 
         // Handler para drop en una zona "vacia" (no sobre un chip).
-        // Mueve el chip al lado correspondiente respecto del bloque de timed.
+        // Mueve el chip al lado correspondiente respecto del bloque de timed
+        // (o al final de la lista flex si no hay timed adentro).
         const handleZoneDrop = (zone: "before" | "after") =>
           (e: React.DragEvent) => {
             e.preventDefault();
@@ -990,11 +991,27 @@ function RoutineBlock({
             if (!srcId) return;
             // Aseguro que el chip pertenezca a esta rutina y a este dia
             handleTaskDrop(srcId);
-            // Reordeno en el array para que quede del lado pedido
-            if (zone === "before" && firstTimedId && srcId !== firstTimedId) {
-              reorderTask(srcId, firstTimedId);
-            } else if (zone === "after" && lastTimedId && srcId !== lastTimedId) {
-              moveTaskAfter(srcId, lastTimedId);
+            // Reordeno en el array para que quede al final del lado pedido.
+            // Excluyo el propio src del calculo del ancla para evitar
+            // self-anchor que dejaria la tarea en el mismo lugar.
+            if (zone === "before") {
+              const beforeNoSrc = beforeList.filter((x) => x.id !== srcId);
+              const beforeAnchor = beforeNoSrc.length
+                ? beforeNoSrc[beforeNoSrc.length - 1].id
+                : null;
+              if (beforeAnchor) {
+                moveTaskAfter(srcId, beforeAnchor);
+              } else if (firstTimedId && srcId !== firstTimedId) {
+                reorderTask(srcId, firstTimedId);
+              }
+            } else {
+              const afterNoSrc = afterList.filter((x) => x.id !== srcId);
+              const afterAnchor = afterNoSrc.length
+                ? afterNoSrc[afterNoSrc.length - 1].id
+                : lastTimedId ?? null;
+              if (afterAnchor && srcId !== afterAnchor) {
+                moveTaskAfter(srcId, afterAnchor);
+              }
             }
           };
 
@@ -1006,7 +1023,11 @@ function RoutineBlock({
             setZoneHover(zone);
           };
 
-        const showZones = hasTimed && anyTaskDragging;
+        // Activamos las zonas de drop siempre que haya un drag en curso.
+        // Antes solo se activaban si la rutina tenia tareas con horario
+        // adentro (hasTimed), lo cual dejaba imposible arrastrar un chip al
+        // final cuando la rutina solo tenia chips flex.
+        const showZones = anyTaskDragging;
 
         return (
           <>

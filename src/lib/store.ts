@@ -92,8 +92,12 @@ export const useFafoStore = create<AppState & Actions>()(
             task.recurringInRoutine = true;
           }
         }
-        set((s) => ({ tasks: [task, ...s.tasks] }));
-        bg("addTask", () => api.upsertTask(task, 0));
+        // Insertamos al final: las tareas nuevas aparecen abajo de las
+        // existentes en su grupo (rutina/dia). El sort_index = length del
+        // array previo deja al nuevo en el ultimo lugar tras la hidratacion.
+        const newSortIdx = get().tasks.length;
+        set((s) => ({ tasks: [...s.tasks, task] }));
+        bg("addTask", () => api.upsertTask(task, newSortIdx));
         return task;
       },
       updateTask: (id, patch) => {
