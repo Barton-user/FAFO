@@ -254,6 +254,7 @@ interface TaskRow {
   is_vital: boolean;
   flexible: boolean;
   recurring_in_routine: boolean;
+  specific_date: string | null;
   sort_index: number;
   completed_at: string | null;
   created_at: string;
@@ -275,6 +276,7 @@ function rowToTask(r: TaskRow): Task {
     isVital: r.is_vital,
     flexible: r.flexible,
     recurringInRoutine: r.recurring_in_routine,
+    specificDate: r.specific_date ?? undefined,
     createdAt: new Date(r.created_at).getTime(),
     completedAt: r.completed_at ? new Date(r.completed_at).getTime() : undefined,
   };
@@ -297,6 +299,7 @@ function taskToRow(t: Partial<Task>, userId: string, sortIndex?: number) {
   if (t.flexible !== undefined) row.flexible = t.flexible;
   if (t.recurringInRoutine !== undefined)
     row.recurring_in_routine = t.recurringInRoutine;
+  if (t.specificDate !== undefined) row.specific_date = t.specificDate ?? null;
   if (sortIndex !== undefined) row.sort_index = sortIndex;
   if (t.completedAt !== undefined) {
     row.completed_at = t.completedAt

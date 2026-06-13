@@ -63,6 +63,7 @@ export function TaskModal({
   const [personId, setPersonId] = useState<string | undefined>(undefined);
   const [isVital, setIsVital] = useState(false);
   const [flexible, setFlexible] = useState(false);
+  const [recurringInRoutine, setRecurringInRoutine] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -77,6 +78,7 @@ export function TaskModal({
       setPersonId(task.personId);
       setIsVital(!!task.isVital);
       setFlexible(!!task.flexible);
+      setRecurringInRoutine(!!task.recurringInRoutine);
     } else if (newDraft) {
       setName("");
       setPriority(2);
@@ -103,6 +105,7 @@ export function TaskModal({
       setPersonId(newDraft.personId);
       setIsVital(false);
       setFlexible(false);
+      setRecurringInRoutine(false);
     }
   }, [open, task, newDraft, routines]);
 
@@ -117,6 +120,7 @@ export function TaskModal({
   function save() {
     const cleanName = name.trim();
     if (!cleanName) return;
+    const anchored = !!routineId && recurringInRoutine;
     const payload = {
       name: cleanName,
       priority,
@@ -128,6 +132,9 @@ export function TaskModal({
       personId,
       isVital: priority === 0 ? true : isVital,
       flexible,
+      recurringInRoutine: anchored,
+      // Si queda anclada, no es de un dia puntual: limpiamos specificDate.
+      ...(anchored ? { specificDate: undefined } : {}),
     };
     if (editingTaskId) {
       updateTask(editingTaskId, payload);
@@ -355,6 +362,28 @@ export function TaskModal({
                   </option>
                 ))}
               </select>
+              {routineId && (
+                <label
+                  className="flex items-center gap-2 text-[11px] cursor-pointer select-none mt-2"
+                  title="Anclada: se repite siempre que aparece la rutina. Sin anclar: tarea de este dia puntual, no se repite."
+                >
+                  <input
+                    type="checkbox"
+                    checked={recurringInRoutine}
+                    onChange={(e) => setRecurringInRoutine(e.target.checked)}
+                    className="accent-fafo-accent w-4 h-4"
+                  />
+                  <span
+                    className={
+                      recurringInRoutine
+                        ? "text-fafo-accent font-semibold"
+                        : "text-fafo-muted"
+                    }
+                  >
+                    ⚓ Anclar a la rutina (se repite siempre)
+                  </span>
+                </label>
+              )}
             </div>
             <div>
               <label className="text-[10px] uppercase tracking-wider text-fafo-muted">

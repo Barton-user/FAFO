@@ -7,7 +7,7 @@ import { useSyncStore } from "@/lib/syncStore";
 import { Avatar } from "./Avatar";
 import { useMemo } from "react";
 import type { ViewMode, Weekday } from "@/lib/types";
-import { isTaskDoneForDay } from "@/lib/taskState";
+import { isTaskDoneForDay, taskAppliesOnDay } from "@/lib/taskState";
 import {
   addDays,
   addMonths,
@@ -32,7 +32,7 @@ interface Props {
 }
 
 const VIEW_TABS: { key: ViewMode; label: string }[] = [
-  { key: "day", label: "Dia" },
+  { key: "day", label: "Mi dia" },
   { key: "week", label: "Semana" },
   { key: "month", label: "Mes" },
 ];
@@ -95,7 +95,7 @@ export function StatusBar({
     // Tareas que aplican hoy para la persona enfocada
     const todayTasks = tasks.filter((t) => {
       if (!ownerFilter(t.personId)) return false;
-      if (!t.weekdays.includes(weekday) && !t.isVital) return false;
+      if (!taskAppliesOnDay(t, today, weekday)) return false;
       if (
         !t.isVital &&
         t.locationId &&

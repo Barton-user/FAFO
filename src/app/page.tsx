@@ -267,6 +267,19 @@ function FooterLegend({ viewMode }: { viewMode: ViewMode }) {
           <span className="opacity-40">·</span>
           <span>los dots muestran la prioridad de cada tarea</span>
         </>
+      ) : viewMode === "day" ? (
+        <>
+          <span>tu dia como lista, agrupado por rutina</span>
+          <span className="opacity-40">·</span>
+          <span>agregá tareas con el + en cada rutina</span>
+          <span className="opacity-40">·</span>
+          <span>
+            <kbd className="px-1 py-0.5 rounded border border-fafo-border text-[9px] text-fafo-text font-semibold">
+              ⚓
+            </kbd>
+            {" anclada = se repite siempre · sin anclar = solo ese dia"}
+          </span>
+        </>
       ) : (
         <>
           <span>doble click en cualquier zona crea una tarea de 1h</span>

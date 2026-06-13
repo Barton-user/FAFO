@@ -63,8 +63,13 @@ export interface Task {
   // banda superior (todo el dia / en orden, segun la rutina)
   flexible?: boolean;
   // Tareas adentro de una rutina que se REPITEN cada vez que la rutina aparece
-  // (habits). Si false (default), es una tarea unica: una vez hecha, queda hecha.
+  // (habits). Tambien llamadas "ancladas". Si false (default), es una tarea
+  // "no anclada": especifica de un dia puntual (ver specificDate) y no se repite.
   recurringInRoutine?: boolean;
+  // Fecha puntual (YYYY-MM-DD) de una tarea "no anclada": si esta seteada, la
+  // tarea SOLO aplica ese dia exacto (ignora weekdays para el render) y no se
+  // repite. Las tareas ancladas (recurringInRoutine) no usan este campo.
+  specificDate?: string;
 }
 
 export interface Person {

@@ -4,7 +4,7 @@ import { useFafoStore } from "@/lib/store";
 import { useResolvedContext } from "@/lib/context";
 import { useAuth } from "@/lib/auth";
 import { useSyncStore } from "@/lib/syncStore";
-import { isTaskDoneForDay, toggleDonePatch } from "@/lib/taskState";
+import { isTaskDoneForDay, toggleDonePatch, taskAppliesOnDay } from "@/lib/taskState";
 import { todayISO, formatDateLong, addDays, parseISO } from "@/lib/dateUtils";
 import type { Task, Weekday, Priority, Routine } from "@/lib/types";
 import { useMemo, useState } from "react";
@@ -74,7 +74,7 @@ export function MobileApp() {
     for (const t of tasks) {
       const ownerId = t.personId ?? selfId;
       if (ownerId !== selfId) continue;
-      if (!t.weekdays.includes(weekday) && !t.isVital) continue;
+      if (!taskAppliesOnDay(t, selectedDate, weekday)) continue;
       if (
         !t.isVital &&
         t.locationId &&
@@ -84,7 +84,7 @@ export function MobileApp() {
       result.push(t);
     }
     return result;
-  }, [tasks, weekday, selfId, ctx.activeLocation]);
+  }, [tasks, weekday, selfId, selectedDate, ctx.activeLocation]);
 
   // Rutinas activas hoy. Solo filtramos por weekday y persona — NO por
   // locationId, para mantener consistencia con la vista de PC
@@ -494,7 +494,8 @@ function MobileTaskRow({
         </div>
         <div className="text-[11px] text-fafo-muted mt-0.5 truncate">
           {subtitle}
-          {task.recurringInRoutine && " · ↻ Repet"}
+          {task.routineId &&
+            (task.recurringInRoutine ? " · ⚓ Anclada" : " · no anclada")}
           {!task.flexible && (
             <>
               {" · "}

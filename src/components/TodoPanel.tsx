@@ -10,7 +10,7 @@ import {
   todayISO,
   WEEKDAYS_SHORT,
 } from "@/lib/dateUtils";
-import { isTaskDoneForDay, toggleDonePatch } from "@/lib/taskState";
+import { isTaskDoneForDay, toggleDonePatch, taskAppliesOnDay } from "@/lib/taskState";
 import { useMemo, useState } from "react";
 import clsx from "clsx";
 
@@ -81,7 +81,7 @@ export function TodoPanel({
       }
       for (const d of days) {
         const w = parseISO(d).getDay() as Weekday;
-        if (!t.weekdays.includes(w) && !t.isVital) continue;
+        if (!taskAppliesOnDay(t, d, w)) continue;
         map.get(d)!.push(t);
       }
     }

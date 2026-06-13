@@ -71,14 +71,18 @@ create table if not exists public.tasks (
   is_vital               boolean       not null default false,
   flexible               boolean       not null default false,
   recurring_in_routine   boolean       not null default false,
+  specific_date          date,
   sort_index             integer       not null default 0,
   completed_at           timestamptz,
   created_at             timestamptz   not null default now(),
   updated_at             timestamptz   not null default now()
 );
--- ALTER si la tabla ya existia sin la columna nueva
+-- ALTER si la tabla ya existia sin las columnas nuevas
 alter table public.tasks
   add column if not exists recurring_in_routine boolean not null default false;
+-- specific_date: tareas "no ancladas" que solo aplican un dia puntual.
+alter table public.tasks
+  add column if not exists specific_date date;
 
 -- Actualizar el CHECK constraint de priority para soportar 0-5
 do $$

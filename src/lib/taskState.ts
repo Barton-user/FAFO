@@ -1,15 +1,37 @@
-import type { Task } from "./types";
+import type { Task, Weekday } from "./types";
 import { timestampToISO, todayISO as todayLocalISO } from "./dateUtils";
+
+/**
+ * Determina si una tarea APLICA en un dia dado.
+ *
+ * - Si tiene `specificDate` (tarea "no anclada"): solo aplica ese dia exacto.
+ *   Esto manda sobre cualquier otra regla (ni siquiera las vitales la muestran
+ *   en otros dias).
+ * - Las vitales (priority 0) aplican todos los dias.
+ * - El resto aplica si el weekday del dia esta en `weekdays`.
+ *
+ * NO chequea ubicacion ni persona: eso queda en cada call-site.
+ */
+export function taskAppliesOnDay(
+  task: Task,
+  iso: string,
+  weekday: number
+): boolean {
+  if (task.specificDate) return task.specificDate === iso;
+  if (task.isVital || task.priority === 0) return true;
+  return task.weekdays.includes(weekday as Weekday);
+}
 
 /**
  * Determina si una tarea esta hecha "para el dia dayISO".
  *
- * - Tareas "repetitivas" (recurringInRoutine + flexible + routineId): se evaluan
- *   por iteracion. Estan hechas para el dia X solo si completedAt cae en X.
- * - Resto: el boolean `done` es la verdad permanente.
+ * - Tareas ancladas (recurringInRoutine + routineId): se evaluan por iteracion.
+ *   Estan hechas para el dia X solo si completedAt cae en X.
+ * - Resto (incluidas las "no ancladas" con specificDate): el boolean `done` es
+ *   la verdad permanente.
  */
 export function isTaskDoneForDay(task: Task, dayISO: string): boolean {
-  if (task.recurringInRoutine && task.flexible && task.routineId) {
+  if (task.recurringInRoutine && task.routineId) {
     if (!task.completedAt) return false;
     const completedDay = timestampToISO(task.completedAt);
     return completedDay === dayISO;
@@ -27,7 +49,7 @@ export function toggleDonePatch(
 ): Partial<Task> {
   const currentlyDone = isTaskDoneForDay(task, dayISO);
   const todayISO = todayLocalISO();
-  if (task.recurringInRoutine && task.flexible && task.routineId) {
+  if (task.recurringInRoutine && task.routineId) {
     if (currentlyDone) {
       return { done: false, completedAt: undefined };
     }

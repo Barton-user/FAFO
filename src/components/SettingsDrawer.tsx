@@ -560,7 +560,7 @@ function RoutineTasksEditor({ routineId }: { routineId: string }) {
             className="accent-fafo-accent w-3 h-3"
           />
           <span className={newRecurring ? "text-fafo-text font-semibold" : ""}>
-            Repetitiva (se rehace cada iteracion)
+            ⚓ Anclar a la rutina (se repite siempre)
           </span>
         </label>
       </form>
@@ -600,9 +600,9 @@ function RoutineTasksEditor({ routineId }: { routineId: string }) {
         </ul>
       )}
       <div className="text-[10px] text-fafo-muted/70 leading-relaxed">
-        <strong>Repetitiva</strong>: se rehace cada vez que aparece la rutina
-        (habit). <strong>Unica</strong>: una vez marcada hecha, queda hecha
-        para siempre.
+        <strong>Anclada</strong> (⚓): se repite siempre que aparece la rutina
+        (habit) y se rehace cada vez. <strong>No anclada</strong>: tarea de un
+        dia puntual, no se repite.
       </div>
     </div>
   );
@@ -664,13 +664,16 @@ function RoutineTaskRow({
       </span>
       <label
         className="flex items-center gap-1 text-[9px] text-fafo-muted cursor-pointer select-none"
-        title="Repetitiva (rehacer cada iteracion)"
+        title="Anclar a la rutina (se repite siempre)"
       >
         <input
           type="checkbox"
           checked={!!task.recurringInRoutine}
           onChange={(e) =>
-            onUpdate({ recurringInRoutine: e.target.checked })
+            onUpdate({
+              recurringInRoutine: e.target.checked,
+              ...(e.target.checked ? { specificDate: undefined } : {}),
+            })
           }
           className="accent-fafo-accent w-3 h-3"
         />
@@ -682,7 +685,7 @@ function RoutineTaskRow({
               : "text-fafo-muted"
           )}
         >
-          {task.recurringInRoutine ? "Repet" : "Unica"}
+          {task.recurringInRoutine ? "⚓ Anclada" : "no anclada"}
         </span>
       </label>
       <button

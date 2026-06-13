@@ -2,19 +2,20 @@
 
 import { useFafoStore } from "@/lib/store";
 import { useResolvedContext } from "@/lib/context";
-import type { Task, Routine, Person, Weekday, ViewMode } from "@/lib/types";
+import type { Task, Routine, Person, Weekday, ViewMode, Priority } from "@/lib/types";
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import {
   parseISO,
   startOfWeek,
   addDays,
   todayISO,
+  formatDateLong,
   monthGridDays,
   isSameMonth,
   WEEKDAYS_SHORT,
 } from "@/lib/dateUtils";
 import { placeFlexTasksInDay } from "@/lib/flexPlacement";
-import { isTaskDoneForDay, toggleDonePatch } from "@/lib/taskState";
+import { isTaskDoneForDay, toggleDonePatch, taskAppliesOnDay } from "@/lib/taskState";
 import clsx from "clsx";
 
 const HOUR_START = 5;
@@ -127,7 +128,7 @@ const PRIORITY_LABEL: Record<number, string> = {
 export function Calendar(props: Props) {
   if (props.viewMode === "month") return <MonthView {...props} />;
   if (props.viewMode === "week") return <WeekView {...props} />;
-  return <DayView {...props} />;
+  return <MiDiaView {...props} />;
 }
 
 /* ---------- PlacedFlexBlock — flex task ubicada automaticamente en la timeline ---------- */
@@ -633,6 +634,33 @@ function RoutineBlock({
     }
   };
 
+  // Anclar / desanclar una tarea de la rutina.
+  // - Anclada (recurringInRoutine): se repite SIEMPRE que aparece la rutina
+  //   (toma los weekdays de la rutina) y se rehace cada iteracion.
+  // - No anclada: tarea de ese dia puntual (specificDate), no se repite.
+  const toggleAnchor = (t: Task) => {
+    const iso = dayISO ?? todayISO();
+    if (t.recurringInRoutine) {
+      // desanclar -> tarea unica de este dia puntual
+      updateTask(t.id, {
+        recurringInRoutine: false,
+        specificDate: iso,
+        weekdays: [parseISO(iso).getDay() as Weekday],
+        done: false,
+        completedAt: undefined,
+      });
+    } else {
+      // anclar -> se repite siempre en la rutina
+      updateTask(t.id, {
+        recurringInRoutine: true,
+        specificDate: undefined,
+        weekdays: routine.weekdays,
+        done: false,
+        completedAt: undefined,
+      });
+    }
+  };
+
   const didMoveRef = useRef(false);
   const [drag, setDrag] = useState<{
     mode: "move" | "resize-top" | "resize-bottom";
@@ -959,21 +987,31 @@ function RoutineBlock({
                 )}
               />
               <span className="truncate font-medium flex-1">{t.name}</span>
-              {t.recurringInRoutine ? (
-                <span
-                  className="shrink-0 text-[9px] font-bold uppercase tracking-wider bg-fafo-accent/15 text-fafo-accent px-1.5 py-0.5 rounded"
-                  title="Repetitiva: se rehace cada vez que aparece la rutina"
-                >
-                  ↻ <span className="hidden sm:inline">Repet</span>
-                </span>
-              ) : (
-                <span
-                  className="shrink-0 text-[9px] uppercase tracking-wider text-fafo-muted/60 hidden sm:inline"
-                  title="Unica: una vez hecha, queda hecha"
-                >
-                  Unica
-                </span>
-              )}
+              <span
+                role="button"
+                tabIndex={0}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  toggleAnchor(t);
+                }}
+                className={clsx(
+                  "shrink-0 text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded cursor-pointer select-none transition-colors",
+                  t.recurringInRoutine
+                    ? "bg-fafo-accent/15 text-fafo-accent hover:bg-fafo-accent/25"
+                    : "text-fafo-muted/70 border border-fafo-border/70 hover:text-fafo-text hover:border-fafo-text/40"
+                )}
+                title={
+                  t.recurringInRoutine
+                    ? "Anclada: se repite siempre en esta rutina. Click para desanclar (solo este dia)."
+                    : "No anclada: solo este dia, no se repite. Click para anclar."
+                }
+              >
+                {t.recurringInRoutine ? (
+                  <>⚓ <span className="hidden sm:inline">Anclada</span></>
+                ) : (
+                  <>⚲ <span className="hidden sm:inline">No anclada</span></>
+                )}
+              </span>
               <span className="text-fafo-muted/40 text-[10px] select-none shrink-0 hidden md:inline">
                 ⋮⋮
               </span>
@@ -1090,12 +1128,11 @@ function RoutineBlock({
   );
 }
 
-/* ---------- DAY VIEW ---------- */
+/* ---------- MI DIA VIEW — lista vertical por rutina (un dia) ---------- */
 
-function DayView({
+function MiDiaView({
   selectedDate,
   viewingPersonId,
-  onDragComplete,
   onTaskClick,
   onRoutineEdit,
 }: Props) {
@@ -1103,426 +1140,510 @@ function DayView({
   const tasks = useFafoStore((s) => s.tasks);
   const routines = useFafoStore((s) => s.routines);
   const people = useFafoStore((s) => s.people);
+  const updateTask = useFafoStore((s) => s.updateTask);
+  const addTask = useFafoStore((s) => s.addTask);
+  const reorderTask = useFafoStore((s) => s.reorderTask);
 
   const weekday = parseISO(selectedDate).getDay() as Weekday;
   const isToday = selectedDate === todayISO();
-  const scrollRef = useRef<HTMLDivElement | null>(null);
-  const didScrollRef = useRef(false);
-
-  // Auto-scroll a la hora actual al cargar/cambiar de dia
-  useEffect(() => {
-    if (!scrollRef.current) return;
-    didScrollRef.current = false;
-  }, [selectedDate]);
-  useEffect(() => {
-    if (!scrollRef.current || didScrollRef.current) return;
-    const targetHour = isToday ? Math.max(HOUR_START, ctx.hour - 1) : 8;
-    const y = (targetHour - HOUR_START) * HOUR_HEIGHT;
-    scrollRef.current.scrollTop = y;
-    didScrollRef.current = true;
-  }, [isToday, ctx.hour]);
 
   const isAll = viewingPersonId === "__all__";
-  const visiblePeople = useMemo(() => {
-    if (isAll) {
-      // Mostrar todas las personas siempre.
-      return people;
-    }
-    const self = people.find((p) => p.isSelf) ?? people[0];
-    const required = new Set<string>();
-    if (self) required.add(self.id);
-    if (viewingPersonId) required.add(viewingPersonId);
-    for (const p of people) {
-      if (p.isSelf) continue;
-      const hasRoutine = routines.some(
-        (r) => r.personId === p.id && r.weekdays.includes(weekday)
-      );
-      const hasTask = tasks.some(
-        (t) => t.personId === p.id && t.weekdays.includes(weekday)
-      );
-      if (hasRoutine || hasTask) required.add(p.id);
-    }
-    return people.filter((p) => required.has(p.id));
-  }, [isAll, people, routines, tasks, weekday, viewingPersonId]);
+  const self = people.find((p) => p.isSelf) ?? people[0];
+  const selfDefaultId = self?.id ?? "person-self";
+  const personId =
+    !isAll && viewingPersonId && people.find((p) => p.id === viewingPersonId)
+      ? viewingPersonId
+      : selfDefaultId;
+  const viewingPerson = people.find((p) => p.id === personId) ?? self;
 
-  const tasksByPerson = useMemo(() => {
-    const map = new Map<string, Task[]>();
-    for (const p of visiblePeople) map.set(p.id, []);
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [dragOverId, setDragOverId] = useState<string | null>(null);
+
+  // Tareas que aplican este dia para la persona enfocada
+  const visibleTasks = useMemo(() => {
+    const result: Task[] = [];
     for (const t of tasks) {
-      if (t.flexible) continue; // las flexibles van a la banda superior
-      if (!t.weekdays.includes(weekday) && !t.isVital) continue;
+      const ownerId = t.personId ?? selfDefaultId;
+      if (ownerId !== personId) continue;
+      if (!taskAppliesOnDay(t, selectedDate, weekday)) continue;
       if (
         !t.isVital &&
         t.locationId &&
         t.locationId !== ctx.activeLocation?.id
       )
         continue;
-      const owner = t.personId ?? visiblePeople[0]?.id;
-      if (owner && map.has(owner)) map.get(owner)!.push(t);
+      result.push(t);
     }
-    return map;
-  }, [tasks, visiblePeople, weekday, ctx.activeLocation]);
+    return result;
+  }, [
+    tasks,
+    weekday,
+    personId,
+    selfDefaultId,
+    selectedDate,
+    ctx.activeLocation,
+  ]);
 
-  // Banda superior: solo flexibles SIN routineId (las con rutina van adentro de la rutina)
-  const flexibleByPerson = useMemo(() => {
-    const map = new Map<string, Task[]>();
-    for (const p of visiblePeople) map.set(p.id, []);
-    for (const t of tasks) {
-      if (!t.flexible) continue;
-      if (t.routineId) continue;
-      if (!t.weekdays.includes(weekday) && !t.isVital) continue;
-      if (
-        !t.isVital &&
-        t.locationId &&
-        t.locationId !== ctx.activeLocation?.id
-      )
-        continue;
-      const owner = t.personId ?? visiblePeople[0]?.id;
-      if (owner && map.has(owner)) map.get(owner)!.push(t);
+  const activeRoutines = useMemo(() => {
+    return routines
+      .filter((r) => {
+        if (!r.weekdays.includes(weekday)) return false;
+        const ownerId = r.personId ?? selfDefaultId;
+        return ownerId === personId;
+      })
+      .sort((a, b) => a.startHour - b.startHour);
+  }, [routines, weekday, personId, selfDefaultId]);
+
+  const groups = useMemo(() => {
+    const out: Array<{
+      key: string;
+      routine: Routine | null;
+      tasks: Task[];
+    }> = [];
+    const accounted = new Set<string>();
+    for (const r of activeRoutines) {
+      const items = visibleTasks.filter((t) => t.routineId === r.id);
+      items.forEach((t) => accounted.add(t.id));
+      out.push({ key: r.id, routine: r, tasks: items });
     }
-    return map;
-  }, [tasks, visiblePeople, weekday, ctx.activeLocation]);
+    const orphans = visibleTasks.filter((t) => !accounted.has(t.id));
+    out.push({ key: "__orphans__", routine: null, tasks: orphans });
+    return out;
+  }, [visibleTasks, activeRoutines]);
 
-  // Flex con routineId: agrupadas por persona + routine
-  const flexByRoutine = useMemo(() => {
-    const map = new Map<string, Map<string, Task[]>>();
-    for (const p of visiblePeople) map.set(p.id, new Map());
-    for (const t of tasks) {
-      if (!t.flexible || !t.routineId) continue;
-      if (!t.weekdays.includes(weekday) && !t.isVital) continue;
-      if (
-        !t.isVital &&
-        t.locationId &&
-        t.locationId !== ctx.activeLocation?.id
-      )
-        continue;
-      const owner = t.personId ?? visiblePeople[0]?.id;
-      if (!owner) continue;
-      const perPerson = map.get(owner);
-      if (!perPerson) continue;
-      if (!perPerson.has(t.routineId)) perPerson.set(t.routineId, []);
-      perPerson.get(t.routineId)!.push(t);
-    }
-    return map;
-  }, [tasks, visiblePeople, weekday, ctx.activeLocation]);
+  const totalToday = visibleTasks.length;
+  const doneToday = visibleTasks.filter((t) =>
+    isTaskDoneForDay(t, selectedDate)
+  ).length;
+  const nowRef = isToday ? ctx.hour : null;
 
-  const routinesByPerson = useMemo(() => {
-    const map = new Map<string, Routine[]>();
-    for (const p of visiblePeople) map.set(p.id, []);
-    for (const r of routines) {
-      if (!r.weekdays.includes(weekday)) continue;
-      const owner = r.personId ?? visiblePeople[0]?.id;
-      if (owner && map.has(owner)) map.get(owner)!.push(r);
-    }
-    return map;
-  }, [routines, visiblePeople, weekday]);
-
-  const [drag, setDrag] = useState<{
-    personId: string;
-    startY: number;
-    currentY: number;
-  } | null>(null);
-
-  const onPointerDown = useCallback(
-    (e: React.PointerEvent<HTMLDivElement>, personId: string) => {
-      if (e.button !== 0 && e.pointerType === "mouse") return;
-      const target = e.currentTarget;
-      const rect = target.getBoundingClientRect();
-      const y = e.clientY - rect.top;
-      target.setPointerCapture(e.pointerId);
-      setDrag({ personId, startY: y, currentY: y });
-    },
-    []
-  );
-
-  const onPointerMove = useCallback(
-    (e: React.PointerEvent<HTMLDivElement>) => {
-      if (!drag) return;
-      const rect = e.currentTarget.getBoundingClientRect();
-      const y = Math.max(0, Math.min(TOTAL_HEIGHT, e.clientY - rect.top));
-      setDrag((d) => (d ? { ...d, currentY: y } : null));
-    },
-    [drag]
-  );
-
-  const onPointerUp = useCallback(
-    (e: React.PointerEvent<HTMLDivElement>) => {
-      if (!drag) return;
-      const rect = e.currentTarget.getBoundingClientRect();
-      const y = Math.max(0, Math.min(TOTAL_HEIGHT, e.clientY - rect.top));
-      const a = snapHour(Math.min(drag.startY, y));
-      const b = snapHour(Math.max(drag.startY, y));
-      setDrag(null);
-      if (b - a >= MIN_DURATION) {
-        const wantsRoutine = e.shiftKey;
-        const dragRoutines = routinesByPerson.get(drag.personId) ?? [];
-        const container = findContainingRoutine(dragRoutines, a, b);
-        onDragComplete({
-          startHour: a,
-          endHour: b,
-          personId: drag.personId,
-          weekday,
-          // Si shift estaba presionado, creamos rutina; sino, tarea.
-          // No prellenamos routineId en modo rutina (no tendria sentido
-          // anidar una rutina dentro de otra).
-          routineId: wantsRoutine ? undefined : container?.id,
-          kind: wantsRoutine ? "routine" : "task",
-        });
-      }
-    },
-    [drag, weekday, onDragComplete, routinesByPerson]
-  );
-
-  const nowMarkerY =
-    isToday && ctx.hour > HOUR_START && ctx.hour < HOUR_END
-      ? (ctx.hour - HOUR_START) * HOUR_HEIGHT
-      : null;
+  const nothing =
+    activeRoutines.length === 0 && groups.every((g) => g.tasks.length === 0);
 
   return (
-    <div ref={scrollRef} className="flex flex-1 overflow-auto bg-fafo-bg">
-      {/* Time gutter: sticky-left dentro del scroll, scrollea verticalmente con el contenido */}
-      <div className="hidden md:block w-16 shrink-0 border-r border-fafo-border bg-fafo-bg sticky left-0 z-30">
-        <div className="h-12 border-b border-fafo-border bg-fafo-bg sticky top-0 z-10" />
-        <div className="relative" style={{ height: TOTAL_HEIGHT }}>
-          {Array.from({ length: HOUR_END - HOUR_START + 1 }, (_, i) => {
-            const h = HOUR_START + i;
-            return (
-              <div
-                key={h}
-                className="absolute right-2 text-[10px] text-fafo-muted tabular-nums"
-                style={{ top: i * HOUR_HEIGHT - 6 }}
-              >
-                {hourLabel(h)}
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      <div className="flex-1 min-w-0">
-        <div
-          className="grid"
-          style={{
-            gridTemplateColumns: visiblePeople
-              .map((p) => {
-                if (isAll) return "minmax(180px, 1fr)";
-                const focusedId = viewingPersonId ?? visiblePeople.find((x) => x.isSelf)?.id;
-                const isFocused = p.id === focusedId;
-                return isFocused
-                  ? "minmax(360px, 9fr)"
-                  : "minmax(90px, 1fr)";
-              })
-              .join(" "),
-          }}
-        >
-          {visiblePeople.map((p) => (
+    <div className="flex-1 overflow-auto bg-fafo-bg">
+      <div className="max-w-3xl mx-auto px-4 py-5 space-y-3">
+        {/* Encabezado */}
+        <div className="flex items-baseline justify-between gap-3 pb-1">
+          <div className="min-w-0">
             <div
-              key={`h-${p.id}`}
-              className="h-12 border-b border-r border-fafo-border flex items-center gap-2 px-3 sticky top-0 bg-fafo-panel/95 backdrop-blur z-30"
-            >
-              <div
-                className="w-7 h-7 rounded-full flex items-center justify-center text-base shadow-inner"
-                style={{ background: p.color + "33", color: p.color }}
-              >
-                {p.emoji}
-              </div>
-              <span className="text-sm font-medium truncate">{p.name}</span>
-              {p.isSelf && (
-                <span className="ml-auto text-[9px] tracking-widest text-fafo-muted">
-                  YO
-                </span>
+              className={clsx(
+                "text-2xl font-black tracking-tight capitalize leading-none truncate",
+                isToday ? "text-fafo-accent" : "text-fafo-text"
               )}
+            >
+              {isToday ? "Mi dia" : formatDateLong(selectedDate)}
             </div>
-          ))}
-
-          {visiblePeople.map((p) => {
-            const ptasks = tasksByPerson.get(p.id) ?? [];
-            const proutines = routinesByPerson.get(p.id) ?? [];
-            return (
-              <div
-                key={`col-${p.id}`}
-                className="relative border-r border-fafo-border select-none"
-                style={{ height: TOTAL_HEIGHT }}
-                onPointerDown={(e) => onPointerDown(e, p.id)}
-                onPointerMove={onPointerMove}
-                onPointerUp={onPointerUp}
-                onPointerCancel={() => setDrag(null)}
-                onDoubleClick={(e) => {
-                  const rect = e.currentTarget.getBoundingClientRect();
-                  const y = Math.max(
-                    0,
-                    Math.min(TOTAL_HEIGHT, e.clientY - rect.top)
-                  );
-                  const startHour = snapHour(y);
-                  const endHour = Math.min(HOUR_END, startHour + 1);
-                  const container = findContainingRoutine(
-                    proutines,
-                    startHour,
-                    endHour
-                  );
-                  onDragComplete({
-                    startHour,
-                    endHour,
-                    personId: p.id,
-                    weekday,
-                    routineId: container?.id,
-                  });
-                }}
-              >
-                {Array.from({ length: HOUR_END - HOUR_START }, (_, i) => (
-                  <div
-                    key={i}
-                    className="absolute left-0 right-0 grid-hour hidden md:block"
-                    style={{ top: i * HOUR_HEIGHT, height: HOUR_HEIGHT }}
-                  >
-                    <div
-                      className="absolute left-0 right-0 grid-hour-half"
-                      style={{ top: HOUR_HEIGHT / 2 }}
-                    />
-                  </div>
-                ))}
-
-                {proutines.map((r) => {
-                  const rtop = (r.startHour - HOUR_START) * HOUR_HEIGHT;
-                  const rh = (r.endHour - r.startHour) * HOUR_HEIGHT;
-                  const flexInRoutine =
-                    flexByRoutine.get(p.id)?.get(r.id) ?? [];
-                  // Tareas con horario que CAEN visualmente dentro de la rutina
-                  // (overlap por horas), sin importar si tienen routineId seteado
-                  // o no. Asi los chips flex nunca se solapan con una timed.
-                  const timedInRoutine = ptasks.filter(
-                    (t) =>
-                      !t.flexible &&
-                      t.endHour > r.startHour &&
-                      t.startHour < r.endHour
-                  );
-                  const scheduledInRoutine = timedInRoutine.map((t) => ({
-                    top:
-                      (Math.max(t.startHour, r.startHour) - r.startHour) *
-                      HOUR_HEIGHT,
-                    height:
-                      (Math.min(t.endHour, r.endHour) -
-                        Math.max(t.startHour, r.startHour)) *
-                      HOUR_HEIGHT,
-                  }));
-                  // Split flex chips por posicion en el array global vs el
-                  // indice de la primera timed: si el chip aparece antes en el
-                  // array, va arriba ("before"), si no, va abajo ("after").
-                  const firstTimed = timedInRoutine[0];
-                  const lastTimed = timedInRoutine[timedInRoutine.length - 1];
-                  const firstTimedIdx = firstTimed
-                    ? tasks.findIndex((x) => x.id === firstTimed.id)
-                    : Infinity;
-                  const flexBefore: Task[] = [];
-                  const flexAfter: Task[] = [];
-                  for (const ft of flexInRoutine) {
-                    const idx = tasks.findIndex((x) => x.id === ft.id);
-                    if (idx !== -1 && idx < firstTimedIdx) flexBefore.push(ft);
-                    else flexAfter.push(ft);
-                  }
-                  return (
-                    <RoutineBlock
-                      key={r.id}
-                      routine={r}
-                      top={rtop}
-                      height={rh}
-                      flexBefore={flexBefore}
-                      flexAfter={flexAfter}
-                      firstTimedId={firstTimed?.id}
-                      lastTimedId={lastTimed?.id}
-                      scheduledRanges={scheduledInRoutine}
-                      routineOverdueRef={isToday ? ctx.hour : null}
-                      dayISO={selectedDate}
-                      onEdit={
-                        onRoutineEdit ? () => onRoutineEdit(r.id) : undefined
-                      }
-                      onFlexTaskOpen={onTaskClick}
-                    />
-                  );
-                })}
-
-                {ptasks.map((t) => {
-                  const top = (t.startHour - HOUR_START) * HOUR_HEIGHT;
-                  const height = Math.max(
-                    28,
-                    (t.endHour - t.startHour) * HOUR_HEIGHT - 4
-                  );
-                  const isOverdue =
-                    isToday && !t.done && t.endHour <= ctx.hour;
-                  return (
-                    <TaskBlock
-                      key={t.id}
-                      task={t}
-                      top={top}
-                      height={height}
-                      routinesInScope={proutines}
-                      isOverdue={isOverdue}
-                      onOpen={() => onTaskClick(t.id)}
-                    />
-                  );
-                })}
-
-                {/* Flex sin rutina: ubicadas automaticamente en los huecos libres */}
-                {placeFlexTasksInDay({
-                  flexTasks: flexibleByPerson.get(p.id) ?? [],
-                  scheduledTasks: ptasks,
-                  routines: proutines,
-                  dayStart: HOUR_START,
-                  dayEnd: HOUR_END,
-                  itemDuration: 0.75,
-                }).map(({ task, startHour, endHour }) => {
-                  const top = (startHour - HOUR_START) * HOUR_HEIGHT;
-                  const height = (endHour - startHour) * HOUR_HEIGHT - 2;
-                  const isOverdueFlex =
-                    isToday &&
-                    !isTaskDoneForDay(task, selectedDate) &&
-                    endHour <= ctx.hour;
-                  return (
-                    <PlacedFlexBlock
-                      key={task.id}
-                      task={task}
-                      top={top}
-                      height={height}
-                      dayISO={selectedDate}
-                      isOverdue={isOverdueFlex}
-                      onOpen={() => onTaskClick(task.id)}
-                    />
-                  );
-                })}
-
-                {drag && drag.personId === p.id && (
-                  <div
-                    className="absolute left-1 right-1 drag-selection flex items-center justify-center"
-                    style={{
-                      top: Math.min(drag.startY, drag.currentY),
-                      height: Math.abs(drag.currentY - drag.startY),
-                    }}
-                  >
-                    <span className="text-[10px] text-fafo-text font-mono bg-fafo-panel/85 px-1.5 py-0.5 rounded">
-                      {hourLabel(snapHour(Math.min(drag.startY, drag.currentY)))} →{" "}
-                      {hourLabel(snapHour(Math.max(drag.startY, drag.currentY)))}
-                    </span>
-                  </div>
-                )}
-
-                {p.isSelf && nowMarkerY !== null && (
-                  <div
-                    className="absolute left-0 right-0 pointer-events-none z-30"
-                    style={{ top: nowMarkerY }}
-                  >
-                    <div className="h-px bg-fafo-accent shadow-[0_0_8px_rgba(221,116,147,0.6)]" />
-                    <div className="absolute -left-1 -top-1 w-2 h-2 rounded-full bg-fafo-accent shadow-[0_0_6px_rgba(221,116,147,0.8)]" />
-                  </div>
-                )}
-              </div>
-            );
-          })}
-
+            <div className="text-xs text-fafo-muted capitalize mt-1 truncate">
+              {formatDateLong(selectedDate)}
+              {!isAll && viewingPerson && !viewingPerson.isSelf
+                ? ` · ${viewingPerson.emoji} ${viewingPerson.name}`
+                : ""}
+              {ctx.activeLocation
+                ? ` · ${ctx.activeLocation.emoji} ${ctx.activeLocation.name}`
+                : ""}
+            </div>
+          </div>
+          {totalToday > 0 && (
+            <div className="text-sm text-fafo-muted tabular-nums shrink-0">
+              <span className="text-fafo-accent2 font-bold">{doneToday}</span>/
+              {totalToday}
+            </div>
+          )}
         </div>
+
+        {nothing ? (
+          <div className="text-center py-20 text-fafo-muted">
+            <div className="text-5xl mb-3 opacity-40">{"\u{1F331}"}</div>
+            <div className="text-sm">No hay nada para este dia.</div>
+            <div className="text-xs mt-1 opacity-70">
+              Agregá una tarea abajo con el +
+            </div>
+          </div>
+        ) : (
+          groups.map((g) => (
+            <MiDiaSection
+              key={g.key}
+              routine={g.routine}
+              tasks={g.tasks}
+              dayISO={selectedDate}
+              nowRef={nowRef}
+              draggingId={draggingId}
+              dragOverId={dragOverId}
+              onAdd={(name, anchored) => {
+                if (g.routine) {
+                  addTask({
+                    name,
+                    priority: 2 as Priority,
+                    weekdays: anchored ? g.routine.weekdays : [weekday],
+                    startHour: g.routine.startHour,
+                    endHour: g.routine.endHour,
+                    personId: g.routine.personId ?? personId,
+                    routineId: g.routine.id,
+                    flexible: true,
+                    recurringInRoutine: anchored,
+                    specificDate: anchored ? undefined : selectedDate,
+                  });
+                } else {
+                  addTask({
+                    name,
+                    priority: 2 as Priority,
+                    weekdays: [weekday],
+                    startHour: 9,
+                    endHour: 10,
+                    personId,
+                    flexible: true,
+                  });
+                }
+              }}
+              onToggle={(t) =>
+                updateTask(t.id, toggleDonePatch(t, selectedDate))
+              }
+              onOpen={(t) => onTaskClick(t.id)}
+              onToggleAnchor={(t) => {
+                const r = g.routine;
+                if (!r) return;
+                if (t.recurringInRoutine) {
+                  updateTask(t.id, {
+                    recurringInRoutine: false,
+                    specificDate: selectedDate,
+                    weekdays: [weekday],
+                    done: false,
+                    completedAt: undefined,
+                  });
+                } else {
+                  updateTask(t.id, {
+                    recurringInRoutine: true,
+                    specificDate: undefined,
+                    weekdays: r.weekdays,
+                    done: false,
+                    completedAt: undefined,
+                  });
+                }
+              }}
+              onEditRoutine={
+                g.routine && onRoutineEdit
+                  ? () => onRoutineEdit(g.routine!.id)
+                  : undefined
+              }
+              onDragStart={(id) => setDraggingId(id)}
+              onDragOverItem={(id) => setDragOverId(id)}
+              onDropItem={(targetId) => {
+                if (draggingId && draggingId !== targetId)
+                  reorderTask(draggingId, targetId);
+                setDraggingId(null);
+                setDragOverId(null);
+              }}
+              onDragEnd={() => {
+                setDraggingId(null);
+                setDragOverId(null);
+              }}
+            />
+          ))
+        )}
       </div>
     </div>
   );
 }
+
+function MiDiaSection({
+  routine,
+  tasks,
+  dayISO,
+  nowRef,
+  draggingId,
+  dragOverId,
+  onAdd,
+  onToggle,
+  onOpen,
+  onToggleAnchor,
+  onEditRoutine,
+  onDragStart,
+  onDragOverItem,
+  onDropItem,
+  onDragEnd,
+}: {
+  routine: Routine | null;
+  tasks: Task[];
+  dayISO: string;
+  nowRef: number | null;
+  draggingId: string | null;
+  dragOverId: string | null;
+  onAdd: (name: string, anchored: boolean) => void;
+  onToggle: (t: Task) => void;
+  onOpen: (t: Task) => void;
+  onToggleAnchor: (t: Task) => void;
+  onEditRoutine?: () => void;
+  onDragStart: (id: string) => void;
+  onDragOverItem: (id: string) => void;
+  onDropItem: (targetId: string) => void;
+  onDragEnd: () => void;
+}) {
+  const [name, setName] = useState("");
+  const [anchored, setAnchored] = useState(false);
+  const overdue =
+    routine != null && nowRef != null && routine.endHour <= nowRef;
+  const done = tasks.filter((t) => isTaskDoneForDay(t, dayISO)).length;
+
+  function submit(e: React.FormEvent) {
+    e.preventDefault();
+    const n = name.trim();
+    if (!n) return;
+    onAdd(n, anchored);
+    setName("");
+  }
+
+  return (
+    <section
+      className="border rounded-2xl overflow-hidden shadow-sm bg-fafo-panel border-fafo-border"
+      style={
+        routine
+          ? {
+              backgroundColor: `${routine.color}12`,
+              borderColor: `${routine.color}40`,
+            }
+          : undefined
+      }
+    >
+      <div
+        className="px-4 py-2.5 flex items-center gap-2"
+        style={{
+          backgroundColor: routine
+            ? `${routine.color}26`
+            : "rgb(var(--panel2) / 0.4)",
+        }}
+      >
+        <span
+          className="w-1.5 h-5 rounded-full shrink-0"
+          style={{ background: routine?.color ?? "#9B8FBC" }}
+        />
+        <button
+          onClick={onEditRoutine}
+          disabled={!onEditRoutine}
+          className={clsx(
+            "text-sm font-bold uppercase tracking-wider text-fafo-text text-left truncate",
+            onEditRoutine && "hover:text-fafo-accent cursor-pointer"
+          )}
+          title={routine ? "Editar rutina" : undefined}
+        >
+          {routine ? routine.name : "Otras tareas"}
+        </button>
+        {routine && (
+          <span className="text-[10px] text-fafo-muted tabular-nums shrink-0">
+            {fmtTime(routine.startHour)}–{fmtTime(routine.endHour)}
+          </span>
+        )}
+        {overdue && (
+          <span className="text-[9px] uppercase tracking-wider text-red-500 font-bold shrink-0">
+            vencida
+          </span>
+        )}
+        <span className="ml-auto text-[11px] text-fafo-muted tabular-nums shrink-0">
+          {done}/{tasks.length}
+        </span>
+      </div>
+
+      {tasks.length > 0 && (
+        <ul>
+          {tasks.map((t) => (
+            <MiDiaRow
+              key={t.id}
+              task={t}
+              routine={routine}
+              dayISO={dayISO}
+              isDragging={draggingId === t.id}
+              isDragOver={dragOverId === t.id && draggingId !== t.id}
+              onToggle={() => onToggle(t)}
+              onOpen={() => onOpen(t)}
+              onToggleAnchor={() => onToggleAnchor(t)}
+              onDragStart={() => onDragStart(t.id)}
+              onDragOver={() => onDragOverItem(t.id)}
+              onDrop={() => onDropItem(t.id)}
+              onDragEnd={onDragEnd}
+            />
+          ))}
+        </ul>
+      )}
+
+      <form
+        onSubmit={submit}
+        className="flex items-center gap-2 px-4 py-2.5 border-t border-fafo-border/30"
+      >
+        <span
+          className={clsx(
+            "w-5 h-5 rounded-full border-2 flex items-center justify-center text-sm shrink-0",
+            name.trim()
+              ? "border-fafo-accent text-fafo-accent"
+              : "border-fafo-muted/40 text-fafo-muted/40"
+          )}
+        >
+          +
+        </span>
+        <input
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder={routine ? "Agregar a esta rutina" : "Agregar una tarea"}
+          className="flex-1 bg-transparent outline-none text-sm py-1 placeholder:text-fafo-muted/60"
+        />
+        {routine && (
+          <label
+            className="flex items-center gap-1 text-[10px] text-fafo-muted cursor-pointer select-none shrink-0"
+            title="Anclada: se repite siempre en esta rutina. Sin anclar: solo este dia."
+          >
+            <input
+              type="checkbox"
+              checked={anchored}
+              onChange={(e) => setAnchored(e.target.checked)}
+              className="accent-fafo-accent w-3 h-3"
+            />
+            <span className={anchored ? "text-fafo-accent font-semibold" : ""}>
+              {"⚓"} anclar
+            </span>
+          </label>
+        )}
+        {name.trim() && (
+          <button
+            type="submit"
+            className="text-xs px-3 py-1 rounded-md bg-fafo-accent text-white font-semibold shrink-0"
+          >
+            Add
+          </button>
+        )}
+      </form>
+    </section>
+  );
+}
+
+function MiDiaRow({
+  task,
+  routine,
+  dayISO,
+  isDragging,
+  isDragOver,
+  onToggle,
+  onOpen,
+  onToggleAnchor,
+  onDragStart,
+  onDragOver,
+  onDrop,
+  onDragEnd,
+}: {
+  task: Task;
+  routine: Routine | null;
+  dayISO: string;
+  isDragging: boolean;
+  isDragOver: boolean;
+  onToggle: () => void;
+  onOpen: () => void;
+  onToggleAnchor: () => void;
+  onDragStart: () => void;
+  onDragOver: () => void;
+  onDrop: () => void;
+  onDragEnd: () => void;
+}) {
+  const isDone = isTaskDoneForDay(task, dayISO);
+  const isVital = task.isVital || task.priority === 0;
+
+  return (
+    <li
+      draggable
+      onDragStart={(e) => {
+        e.dataTransfer.setData("text/task-id", task.id);
+        e.dataTransfer.effectAllowed = "move";
+        onDragStart();
+      }}
+      onDragOver={(e) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "move";
+        onDragOver();
+      }}
+      onDrop={(e) => {
+        e.preventDefault();
+        onDrop();
+      }}
+      onDragEnd={onDragEnd}
+      onClick={onOpen}
+      className={clsx(
+        "px-4 py-2.5 flex items-center gap-3 border-t border-fafo-border/30 cursor-pointer hover:bg-fafo-panel2/30 transition-colors",
+        isDragging && "opacity-30",
+        isDragOver && "border-t-2 border-t-fafo-accent"
+      )}
+    >
+      <span className="text-fafo-muted/30 text-xs select-none shrink-0 hidden sm:inline">
+        {"⋮⋮"}
+      </span>
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          onToggle();
+        }}
+        className={clsx(
+          "shrink-0 w-6 h-6 rounded-full border-2 flex items-center justify-center text-xs transition-all",
+          isDone
+            ? "bg-fafo-accent2 border-fafo-accent2 text-white"
+            : "border-fafo-muted/60 hover:border-fafo-accent"
+        )}
+        aria-label="Toggle"
+      >
+        {isDone && <span className="leading-none">{"✓"}</span>}
+      </button>
+      <span
+        className={clsx(
+          "w-2 h-2 rounded-full shrink-0",
+          PRIORITY_DOT[task.priority]
+        )}
+      />
+      <span
+        className={clsx(
+          "flex-1 min-w-0 truncate text-[15px] font-medium",
+          isDone && "line-through text-fafo-muted"
+        )}
+      >
+        {task.name}
+      </span>
+
+      {routine && (
+        <span
+          role="button"
+          tabIndex={0}
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggleAnchor();
+          }}
+          className={clsx(
+            "shrink-0 text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded cursor-pointer select-none transition-colors",
+            task.recurringInRoutine
+              ? "bg-fafo-accent/15 text-fafo-accent hover:bg-fafo-accent/25"
+              : "text-fafo-muted/70 border border-fafo-border/70 hover:text-fafo-text hover:border-fafo-text/40"
+          )}
+          title={
+            task.recurringInRoutine
+              ? "Anclada: se repite siempre en esta rutina. Click para desanclar (solo este dia)."
+              : "No anclada: solo este dia, no se repite. Click para anclar."
+          }
+        >
+          {task.recurringInRoutine ? "⚓ Anclada" : "⚲ No anclada"}
+        </span>
+      )}
+
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          onOpen();
+        }}
+        className={clsx(
+          "shrink-0 text-xl leading-none w-7 h-7 flex items-center justify-center",
+          isVital ? "text-fafo-accent" : "text-fafo-muted/25"
+        )}
+        aria-label="Vital"
+        title={isVital ? "Vital" : "Abrir"}
+      >
+        {isVital ? "★" : "☆"}
+      </button>
+    </li>
+  );
+}
+
 
 /* ---------- WEEK VIEW ---------- */
 
@@ -1566,16 +1687,19 @@ function WeekView({
     didScrollRef.current = true;
   }, [days, today, ctx.hour]);
 
+  // Tareas con horario SIN rutina -> bloques en la grilla. Las tareas con
+  // rutina ya NO van como bloque: van como chip simple dentro de la rutina.
   const tasksByDay = useMemo(() => {
     const map = new Map<string, Task[]>();
     for (const d of days) map.set(d, []);
     for (const t of tasks) {
       if (t.flexible) continue;
+      if (t.routineId) continue;
       const ownerId = t.personId ?? selfDefaultId;
       if (!isAll && ownerId !== selfId) continue;
       for (const d of days) {
         const w = parseISO(d).getDay() as Weekday;
-        if (!t.weekdays.includes(w) && !t.isVital) continue;
+        if (!taskAppliesOnDay(t, d, w)) continue;
         if (
           !t.isVital &&
           t.locationId &&
@@ -1599,7 +1723,7 @@ function WeekView({
       if (!isAll && ownerId !== selfId) continue;
       for (const d of days) {
         const w = parseISO(d).getDay() as Weekday;
-        if (!t.weekdays.includes(w) && !t.isVital) continue;
+        if (!taskAppliesOnDay(t, d, w)) continue;
         if (
           !t.isVital &&
           t.locationId &&
@@ -1612,17 +1736,19 @@ function WeekView({
     return map;
   }, [tasks, days, selfId, selfDefaultId, isAll, ctx.activeLocation]);
 
-  // Flex con routineId: agrupadas por dia + routine
-  const flexByDayRoutine = useMemo(() => {
+  // TODAS las tareas con routineId (flex o con horario): se muestran como
+  // chips simples uniformes dentro del bloque de la rutina. Agrupadas por
+  // dia + routine.
+  const tasksByDayRoutine = useMemo(() => {
     const map = new Map<string, Map<string, Task[]>>();
     for (const d of days) map.set(d, new Map());
     for (const t of tasks) {
-      if (!t.flexible || !t.routineId) continue;
+      if (!t.routineId) continue;
       const ownerId = t.personId ?? selfDefaultId;
       if (!isAll && ownerId !== selfId) continue;
       for (const d of days) {
         const w = parseISO(d).getDay() as Weekday;
-        if (!t.weekdays.includes(w) && !t.isVital) continue;
+        if (!taskAppliesOnDay(t, d, w)) continue;
         if (
           !t.isVital &&
           t.locationId &&
@@ -1845,35 +1971,9 @@ function WeekView({
                 {droutines.map((r) => {
                   const rtop = (r.startHour - HOUR_START) * HOUR_HEIGHT;
                   const rh = (r.endHour - r.startHour) * HOUR_HEIGHT;
-                  const flexInRoutine =
-                    flexByDayRoutine.get(d)?.get(r.id) ?? [];
-                  const timedInRoutine = dtasks.filter(
-                    (t) =>
-                      !t.flexible &&
-                      t.endHour > r.startHour &&
-                      t.startHour < r.endHour
-                  );
-                  const scheduledInRoutine = timedInRoutine.map((t) => ({
-                    top:
-                      (Math.max(t.startHour, r.startHour) - r.startHour) *
-                      HOUR_HEIGHT,
-                    height:
-                      (Math.min(t.endHour, r.endHour) -
-                        Math.max(t.startHour, r.startHour)) *
-                      HOUR_HEIGHT,
-                  }));
-                  const firstTimed = timedInRoutine[0];
-                  const lastTimed = timedInRoutine[timedInRoutine.length - 1];
-                  const firstTimedIdx = firstTimed
-                    ? tasks.findIndex((x) => x.id === firstTimed.id)
-                    : Infinity;
-                  const flexBefore: Task[] = [];
-                  const flexAfter: Task[] = [];
-                  for (const ft of flexInRoutine) {
-                    const idx = tasks.findIndex((x) => x.id === ft.id);
-                    if (idx !== -1 && idx < firstTimedIdx) flexBefore.push(ft);
-                    else flexAfter.push(ft);
-                  }
+                  // Todas las tareas de la rutina como chips simples uniformes.
+                  const routineChips =
+                    tasksByDayRoutine.get(d)?.get(r.id) ?? [];
                   return (
                     <RoutineBlock
                       key={`${d}-${r.id}`}
@@ -1881,11 +1981,8 @@ function WeekView({
                       top={rtop}
                       height={rh}
                       compact
-                      flexBefore={flexBefore}
-                      flexAfter={flexAfter}
-                      firstTimedId={firstTimed?.id}
-                      lastTimedId={lastTimed?.id}
-                      scheduledRanges={scheduledInRoutine}
+                      flexAfter={routineChips}
+                      scheduledRanges={[]}
                       routineOverdueRef={d === today ? ctx.hour : null}
                       dayISO={d}
                       onEdit={
@@ -2189,9 +2286,10 @@ function WeekViewAll({
           {subCols.map(({ day, person, weekday }, idx) => {
             const ptasks = tasks.filter((t) => {
               if (t.flexible) return false;
+              if (t.routineId) return false;
               const owner = t.personId ?? selfDefaultId;
               if (owner !== person.id) return false;
-              if (!t.weekdays.includes(weekday) && !t.isVital) return false;
+              if (!taskAppliesOnDay(t, day, weekday)) return false;
               if (
                 !t.isVital &&
                 t.locationId &&
@@ -2261,41 +2359,14 @@ function WeekViewAll({
                 {proutines.map((r) => {
                   const rtop = (r.startHour - HOUR_START) * HOUR_HEIGHT;
                   const rh = (r.endHour - r.startHour) * HOUR_HEIGHT;
-                  const flexInRoutine = tasks.filter((t) => {
-                    if (!t.flexible || t.routineId !== r.id) return false;
+                  // Todas las tareas de la rutina como chips simples uniformes.
+                  const routineChips = tasks.filter((t) => {
+                    if (t.routineId !== r.id) return false;
                     const owner = t.personId ?? selfDefaultId;
                     if (owner !== person.id) return false;
-                    if (!t.weekdays.includes(weekday) && !t.isVital)
-                      return false;
+                    if (!taskAppliesOnDay(t, day, weekday)) return false;
                     return true;
                   });
-                  const timedInRoutine = ptasks.filter(
-                    (t) =>
-                      !t.flexible &&
-                      t.endHour > r.startHour &&
-                      t.startHour < r.endHour
-                  );
-                  const scheduledInRoutine = timedInRoutine.map((t) => ({
-                    top:
-                      (Math.max(t.startHour, r.startHour) - r.startHour) *
-                      HOUR_HEIGHT,
-                    height:
-                      (Math.min(t.endHour, r.endHour) -
-                        Math.max(t.startHour, r.startHour)) *
-                      HOUR_HEIGHT,
-                  }));
-                  const firstTimed = timedInRoutine[0];
-                  const lastTimed = timedInRoutine[timedInRoutine.length - 1];
-                  const firstTimedIdx = firstTimed
-                    ? tasks.findIndex((x) => x.id === firstTimed.id)
-                    : Infinity;
-                  const flexBefore: Task[] = [];
-                  const flexAfter: Task[] = [];
-                  for (const ft of flexInRoutine) {
-                    const idx = tasks.findIndex((x) => x.id === ft.id);
-                    if (idx !== -1 && idx < firstTimedIdx) flexBefore.push(ft);
-                    else flexAfter.push(ft);
-                  }
                   return (
                     <RoutineBlock
                       key={`${day}-${r.id}`}
@@ -2303,11 +2374,8 @@ function WeekViewAll({
                       top={rtop}
                       height={rh}
                       compact
-                      flexBefore={flexBefore}
-                      flexAfter={flexAfter}
-                      firstTimedId={firstTimed?.id}
-                      lastTimedId={lastTimed?.id}
-                      scheduledRanges={scheduledInRoutine}
+                      flexAfter={routineChips}
+                      scheduledRanges={[]}
                       routineOverdueRef={day === today ? ctx.hour : null}
                       dayISO={day}
                       onEdit={
@@ -2346,8 +2414,7 @@ function WeekViewAll({
                     if (!t.flexible || t.routineId) return false;
                     const owner = t.personId ?? selfDefaultId;
                     if (owner !== person.id) return false;
-                    if (!t.weekdays.includes(weekday) && !t.isVital)
-                      return false;
+                    if (!taskAppliesOnDay(t, day, weekday)) return false;
                     if (
                       !t.isVital &&
                       t.locationId &&
@@ -2432,7 +2499,7 @@ function MonthView({ selectedDate, onSelectDate }: Props) {
     for (const t of tasks) {
       for (const c of cells) {
         const w = parseISO(c).getDay() as Weekday;
-        if (t.isVital || t.weekdays.includes(w)) {
+        if (taskAppliesOnDay(t, c, w)) {
           map.get(c)!.push(t);
         }
       }
