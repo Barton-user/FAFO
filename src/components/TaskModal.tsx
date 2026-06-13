@@ -31,12 +31,6 @@ export interface TaskModalProps {
   editingTaskId?: string;
 }
 
-function hourToStr(h: number) {
-  const hh = Math.floor(h);
-  const mm = Math.round((h - hh) * 60);
-  return `${hh.toString().padStart(2, "0")}:${mm.toString().padStart(2, "0")}`;
-}
-
 export function TaskModal({
   open,
   onClose,
@@ -62,7 +56,6 @@ export function TaskModal({
   const [endHour, setEndHour] = useState(10);
   const [personId, setPersonId] = useState<string | undefined>(undefined);
   const [isVital, setIsVital] = useState(false);
-  const [flexible, setFlexible] = useState(false);
   const [recurringInRoutine, setRecurringInRoutine] = useState(false);
 
   useEffect(() => {
@@ -77,7 +70,6 @@ export function TaskModal({
       setEndHour(task.endHour);
       setPersonId(task.personId);
       setIsVital(!!task.isVital);
-      setFlexible(!!task.flexible);
       setRecurringInRoutine(!!task.recurringInRoutine);
     } else if (newDraft) {
       setName("");
@@ -104,7 +96,6 @@ export function TaskModal({
       setEndHour(newDraft.endHour);
       setPersonId(newDraft.personId);
       setIsVital(false);
-      setFlexible(false);
       setRecurringInRoutine(false);
     }
   }, [open, task, newDraft, routines]);
@@ -131,7 +122,8 @@ export function TaskModal({
       endHour: Math.max(startHour + 0.25, endHour),
       personId,
       isVital: priority === 0 ? true : isVital,
-      flexible,
+      // Todas las tareas son tipo "todo" (sin horario fijo).
+      flexible: true,
       recurringInRoutine: anchored,
       // Si queda anclada, no es de un dia puntual: limpiamos specificDate.
       ...(anchored ? { specificDate: undefined } : {}),
@@ -210,111 +202,6 @@ export function TaskModal({
               </div>
             )}
           </div>
-
-          {/* Flexible (sin horario fijo) */}
-          <div className="space-y-1.5">
-            <label className="flex items-center gap-2 text-xs cursor-pointer select-none">
-              <input
-                type="checkbox"
-                checked={flexible}
-                onChange={(e) => {
-                  const checked = e.target.checked;
-                  if (!checked) {
-                    const span = endHour - startHour;
-                    if (span > 2 || span <= 0) {
-                      const safeStart =
-                        startHour > 0 && startHour < 23 ? startHour : 9;
-                      setStartHour(safeStart);
-                      setEndHour(Math.min(24, safeStart + 1));
-                    }
-                  }
-                  setFlexible(checked);
-                }}
-                className="accent-fafo-accent w-4 h-4"
-              />
-              <span
-                className={
-                  flexible
-                    ? "text-fafo-text font-semibold"
-                    : "text-fafo-muted"
-                }
-              >
-                Sin horario fijo (todo el dia / orden libre)
-              </span>
-            </label>
-            {!flexible && routineId && (
-              <button
-                type="button"
-                onClick={() => setFlexible(true)}
-                className="text-[10px] text-fafo-accent hover:underline pl-6"
-                title="Hace que esta tarea aparezca como chip dentro de la rutina"
-              >
-                → Mover a la lista de la rutina (como chip)
-              </button>
-            )}
-          </div>
-
-          {/* Time */}
-          {!flexible && (
-            <div className="grid grid-cols-3 gap-3">
-              <div>
-                <label className="text-[10px] uppercase tracking-wider text-fafo-muted">
-                  Desde
-                </label>
-                <input
-                  type="time"
-                  value={hourToStr(startHour)}
-                  onChange={(e) => {
-                    const [h, m] = e.target.value.split(":").map(Number);
-                    const dur = Math.max(0.25, endHour - startHour);
-                    const newStart = h + m / 60;
-                    setStartHour(newStart);
-                    setEndHour(Math.min(24, newStart + dur));
-                  }}
-                  className="w-full bg-fafo-bg border border-fafo-border rounded-md px-2 py-1.5 text-sm mt-1.5 outline-none focus:border-fafo-accent"
-                />
-              </div>
-              <div>
-                <label className="text-[10px] uppercase tracking-wider text-fafo-muted">
-                  Duracion
-                </label>
-                <select
-                  value={Math.max(0.25, endHour - startHour).toString()}
-                  onChange={(e) => {
-                    const dur = parseFloat(e.target.value);
-                    setEndHour(Math.min(24, startHour + dur));
-                  }}
-                  className="w-full bg-fafo-bg border border-fafo-border rounded-md px-2 py-1.5 text-sm mt-1.5 outline-none focus:border-fafo-accent"
-                >
-                  <option value="0.25">15 min</option>
-                  <option value="0.5">30 min</option>
-                  <option value="0.75">45 min</option>
-                  <option value="1">1 h</option>
-                  <option value="1.5">1.5 h</option>
-                  <option value="2">2 h</option>
-                  <option value="3">3 h</option>
-                  <option value="4">4 h</option>
-                  <option value="5">5 h</option>
-                  <option value="6">6 h</option>
-                  <option value="8">8 h</option>
-                </select>
-              </div>
-              <div>
-                <label className="text-[10px] uppercase tracking-wider text-fafo-muted">
-                  Hasta
-                </label>
-                <input
-                  type="time"
-                  value={hourToStr(endHour)}
-                  onChange={(e) => {
-                    const [h, m] = e.target.value.split(":").map(Number);
-                    setEndHour(h + m / 60);
-                  }}
-                  className="w-full bg-fafo-bg border border-fafo-border rounded-md px-2 py-1.5 text-sm mt-1.5 outline-none focus:border-fafo-accent"
-                />
-              </div>
-            </div>
-          )}
 
           {/* Weekdays */}
           <div>
