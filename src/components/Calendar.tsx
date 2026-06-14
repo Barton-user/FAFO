@@ -995,10 +995,10 @@ function RoutineBlock({
                   toggleAnchor(t);
                 }}
                 className={clsx(
-                  "shrink-0 text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded cursor-pointer select-none transition-colors",
+                  "shrink-0 w-5 text-center text-sm leading-none rounded cursor-pointer select-none transition-colors",
                   t.recurringInRoutine
-                    ? "bg-fafo-accent/15 text-fafo-accent hover:bg-fafo-accent/25"
-                    : "text-fafo-muted/70 border border-fafo-border/70 hover:text-fafo-text hover:border-fafo-text/40"
+                    ? "text-fafo-accent hover:text-fafo-accent/70"
+                    : "text-fafo-muted/35 hover:text-fafo-muted"
                 )}
                 title={
                   t.recurringInRoutine
@@ -1006,11 +1006,7 @@ function RoutineBlock({
                     : "No anclada: solo este dia, no se repite. Click para anclar."
                 }
               >
-                {t.recurringInRoutine ? (
-                  <>⚓ <span className="hidden sm:inline">Anclada</span></>
-                ) : (
-                  <>⚲ <span className="hidden sm:inline">No anclada</span></>
-                )}
+                ⚓
               </span>
               <span className="text-fafo-muted/40 text-[10px] select-none shrink-0 hidden md:inline">
                 ⋮⋮
@@ -1077,7 +1073,7 @@ function RoutineBlock({
             {(beforeList.length > 0 || (showZones && beforeHeight >= 24)) && (
               <div
                 className={clsx(
-                  "absolute left-2 right-2 flex flex-col gap-1.5 overflow-y-auto md:left-1.5 md:right-7 md:gap-1 transition-colors rounded",
+                  "absolute left-2 right-2 flex flex-col gap-1.5 overflow-y-auto md:left-1.5 md:right-1.5 md:gap-1 transition-colors rounded",
                   showZones && "pointer-events-auto",
                   !showZones && "pointer-events-none",
                   zoneHover === "before" &&
@@ -1098,7 +1094,7 @@ function RoutineBlock({
             {(afterList.length > 0 || (showZones && afterHeight >= 24)) && (
               <div
                 className={clsx(
-                  "absolute left-2 right-2 flex flex-col gap-1.5 overflow-y-auto md:left-1.5 md:right-7 md:gap-1 transition-colors rounded",
+                  "absolute left-2 right-2 flex flex-col gap-1.5 overflow-y-auto md:left-1.5 md:right-1.5 md:gap-1 transition-colors rounded",
                   showZones && "pointer-events-auto",
                   !showZones && "pointer-events-none",
                   zoneHover === "after" &&
