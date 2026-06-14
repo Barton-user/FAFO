@@ -949,8 +949,8 @@ function RoutineBlock({
                 "pointer-events-auto rounded-lg flex items-center gap-3 shadow-md hover:shadow-lg transition-all shrink-0 max-w-full text-left cursor-move",
                 "ring-1 ring-fafo-text/5",
                 compact
-                  ? "px-2.5 py-1.5 text-[11px] gap-2"
-                  : "px-3.5 py-3 text-[15px] md:px-3 md:py-2 md:text-[13px] md:gap-2",
+                  ? "px-2 py-1.5 text-[11px] gap-1.5"
+                  : "px-3 py-3 text-[15px] md:px-2.5 md:py-2 md:text-[13px] md:gap-1.5",
                 isDone
                   ? "bg-emerald-200 text-emerald-900 line-through"
                   : isOverdue
@@ -995,7 +995,7 @@ function RoutineBlock({
                   toggleAnchor(t);
                 }}
                 className={clsx(
-                  "shrink-0 w-5 text-center text-sm leading-none rounded cursor-pointer select-none transition-colors",
+                  "shrink-0 w-4 text-center text-sm leading-none rounded cursor-pointer select-none transition-colors",
                   t.recurringInRoutine
                     ? "text-fafo-accent hover:text-fafo-accent/70"
                     : "text-fafo-muted/35 hover:text-fafo-muted"
@@ -1007,9 +1007,6 @@ function RoutineBlock({
                 }
               >
                 ⚓
-              </span>
-              <span className="text-fafo-muted/40 text-[10px] select-none shrink-0 hidden md:inline">
-                ⋮⋮
               </span>
             </button>
           );
