@@ -15,7 +15,7 @@ import {
   WEEKDAYS_SHORT,
 } from "@/lib/dateUtils";
 import { placeFlexTasksInDay } from "@/lib/flexPlacement";
-import { isTaskDoneForDay, toggleDonePatch, taskAppliesOnDay } from "@/lib/taskState";
+import { isTaskDoneForDay, toggleDonePatch, taskAppliesOnDay, sortTasksByDone } from "@/lib/taskState";
 import clsx from "clsx";
 
 const HOUR_START = 5;
@@ -894,10 +894,17 @@ function RoutineBlock({
 
         // Cuando NO hay timed, ponemos todos los chips en la zona "after"
         // (que en ese caso ocupa todo). Asi nunca quedan pisados.
-        const beforeList = hasTimed ? flexBefore ?? [] : [];
-        const afterList = hasTimed
-          ? flexAfter ?? []
-          : [...(flexBefore ?? []), ...(flexAfter ?? [])];
+        const dISO = dayISO ?? todayISO();
+        const beforeList = sortTasksByDone(
+          hasTimed ? flexBefore ?? [] : [],
+          dISO
+        );
+        const afterList = sortTasksByDone(
+          hasTimed
+            ? flexAfter ?? []
+            : [...(flexBefore ?? []), ...(flexAfter ?? [])],
+          dISO
+        );
 
         const renderChip = (t: Task) => {
           const isDone = isTaskDoneForDay(t, dayISO ?? todayISO());
@@ -1197,12 +1204,20 @@ function MiDiaView({
     for (const r of activeRoutines) {
       const items = visibleTasks.filter((t) => t.routineId === r.id);
       items.forEach((t) => accounted.add(t.id));
-      out.push({ key: r.id, routine: r, tasks: items });
+      out.push({
+        key: r.id,
+        routine: r,
+        tasks: sortTasksByDone(items, selectedDate),
+      });
     }
     const orphans = visibleTasks.filter((t) => !accounted.has(t.id));
-    out.push({ key: "__orphans__", routine: null, tasks: orphans });
+    out.push({
+      key: "__orphans__",
+      routine: null,
+      tasks: sortTasksByDone(orphans, selectedDate),
+    });
     return out;
-  }, [visibleTasks, activeRoutines]);
+  }, [visibleTasks, activeRoutines, selectedDate]);
 
   const totalToday = visibleTasks.length;
   const doneToday = visibleTasks.filter((t) =>

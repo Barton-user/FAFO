@@ -40,6 +40,25 @@ export function isTaskDoneForDay(task: Task, dayISO: string): boolean {
 }
 
 /**
+ * Reordena una lista de tareas flotando las HECHAS (para el dia dado) hacia
+ * arriba, manteniendo el orden relativo dentro de cada grupo (estable).
+ * Es puramente visual: no toca el array guardado, asi el drag-reorder sigue
+ * funcionando. Pasar doneFirst=false para mandarlas abajo en su lugar.
+ */
+export function sortTasksByDone(
+  tasks: Task[],
+  dayISO: string,
+  doneFirst = true
+): Task[] {
+  const done: Task[] = [];
+  const pending: Task[] = [];
+  for (const t of tasks) {
+    (isTaskDoneForDay(t, dayISO) ? done : pending).push(t);
+  }
+  return doneFirst ? [...done, ...pending] : [...pending, ...done];
+}
+
+/**
  * Calcula el patch para togglear el estado "hecha" en el dia dayISO.
  * Para tareas repetitivas, setea completedAt al timestamp del dia.
  */
